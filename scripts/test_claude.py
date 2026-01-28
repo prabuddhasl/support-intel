@@ -1,6 +1,6 @@
 import json
+
 from anthropic import Anthropic
-import os
 
 client = Anthropic()
 MODEL = "claude-sonnet-4-5-20250929"
@@ -42,7 +42,7 @@ try:
 
     if text:
         result = json.loads(text)
-        print(f"Parsed successfully!")
+        print("Parsed successfully!")
         print(json.dumps(result, indent=2))
     else:
         print("ERROR: No text extracted from response")
@@ -50,4 +50,5 @@ try:
 except Exception as e:
     print(f"Error: {type(e).__name__}: {e}")
     import traceback
+
     traceback.print_exc()

@@ -16,7 +16,9 @@ export default function Analytics() {
   useEffect(() => {
     fetchAnalytics()
       .then(setData)
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : 'Request failed'),
+      )
       .finally(() => setLoading(false))
   }, [])
 

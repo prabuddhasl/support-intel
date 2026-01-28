@@ -32,13 +32,15 @@ export default function TicketDetail() {
     setLoading(true)
     fetchTicket(ticketId)
       .then(setTicket)
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : 'Request failed'),
+      )
       .finally(() => setLoading(false))
   }, [ticketId])
 
   function copyReply() {
     if (!ticket?.suggested_reply) return
-    navigator.clipboard.writeText(ticket.suggested_reply).then(() => {
+    void navigator.clipboard.writeText(ticket.suggested_reply).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
@@ -56,7 +58,7 @@ export default function TicketDetail() {
 
       <div className="detail-header">
         <div>
-          <h1>{ticket.subject || 'Untitled'}</h1>
+          <h1>{ticket.subject ?? 'Untitled'}</h1>
           <span className="detail-id">{ticket.ticket_id}</span>
         </div>
         <div className="detail-badges">
@@ -74,9 +76,9 @@ export default function TicketDetail() {
           <h3>Ticket Info</h3>
           <dl>
             <dt>Channel</dt>
-            <dd>{ticket.channel || '—'}</dd>
+            <dd>{ticket.channel ?? '—'}</dd>
             <dt>Customer ID</dt>
-            <dd>{ticket.customer_id || '—'}</dd>
+            <dd>{ticket.customer_id ?? '—'}</dd>
             <dt>Created</dt>
             <dd>{formatDate(ticket.created_at)}</dd>
             <dt>Updated</dt>
@@ -86,7 +88,7 @@ export default function TicketDetail() {
 
         <div className="detail-card detail-body-card">
           <h3>Description</h3>
-          <p className="detail-body">{ticket.body || '—'}</p>
+          <p className="detail-body">{ticket.body ?? '—'}</p>
         </div>
       </div>
 
@@ -101,14 +103,14 @@ export default function TicketDetail() {
             <div className="enrichment-grid">
               <div className="detail-card">
                 <h3>Summary</h3>
-                <p>{ticket.summary || '—'}</p>
+                <p>{ticket.summary ?? '—'}</p>
               </div>
 
               <div className="detail-card">
                 <h3>Classification</h3>
                 <dl>
                   <dt>Category</dt>
-                  <dd><span className="badge badge-category">{ticket.category || '—'}</span></dd>
+                  <dd><span className="badge badge-category">{ticket.category ?? '—'}</span></dd>
                   <dt>Sentiment</dt>
                   <dd>
                     <span
@@ -119,7 +121,7 @@ export default function TicketDetail() {
                           ticket.sentiment === 'positive' ? '#16a34a' : '#6b7280',
                       }}
                     >
-                      {ticket.sentiment || '—'}
+                      {ticket.sentiment ?? '—'}
                     </span>
                   </dd>
                 </dl>

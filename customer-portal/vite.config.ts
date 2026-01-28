@@ -7,7 +7,7 @@ export default defineConfig({
     host: true,
     port: 5174,
     proxy: {
-      '/tickets': process.env.API_URL || 'http://localhost:8000',
+      '/tickets': process.env.API_URL ?? 'http://localhost:8000',
     },
   },
 })

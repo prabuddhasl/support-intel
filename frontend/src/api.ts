@@ -1,12 +1,13 @@
-import type { TicketListResponse, EnrichedTicket, AnalyticsSummary, TicketFilters } from './types'
+import type { AnalyticsSummary, EnrichedTicket, TicketFilters, TicketListResponse } from './types'
 
 async function request<T>(url: string): Promise<T> {
   const res = await fetch(url)
   if (!res.ok) {
-    const err = await res.json().catch(() => null)
-    throw new Error(err?.detail || `Request failed (${res.status})`)
+    const err = (await res.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(err?.detail ?? `Request failed (${res.status})`)
   }
-  return res.json()
+  const data = (await res.json()) as T
+  return data
 }
 
 export async function fetchTickets(filters: TicketFilters): Promise<TicketListResponse> {

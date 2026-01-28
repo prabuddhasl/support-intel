@@ -50,15 +50,18 @@ export default function CreateTicket() {
       })
 
       if (!res.ok) {
-        const err = await res.json().catch(() => null)
-        throw new Error(err?.detail || `Request failed (${res.status})`)
+        const err = (await res.json().catch(() => null)) as { detail?: string } | null
+        throw new Error(err?.detail ?? `Request failed (${res.status})`)
       }
 
-      const data = await res.json()
+      const data = (await res.json()) as { ticket_id: string }
       setResult({ ok: true, message: `Ticket created: ${data.ticket_id}` })
       setForm({ subject: '', body: '', channel: 'email', priority: 'normal', customer_id: '' })
     } catch (err) {
-      setResult({ ok: false, message: err instanceof Error ? err.message : 'Something went wrong' })
+      setResult({
+        ok: false,
+        message: err instanceof Error ? err.message : 'Something went wrong',
+      })
     } finally {
       setSubmitting(false)
     }
@@ -69,7 +72,7 @@ export default function CreateTicket() {
       <h1>Submit a Support Ticket</h1>
       <p className="subtitle">Describe your issue and we'll get back to you as soon as possible.</p>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={(e) => void handleSubmit(e)}>
         <div className="form-group">
           <label htmlFor="subject">Subject</label>
           <input

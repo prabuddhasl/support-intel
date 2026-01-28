@@ -1,10 +1,13 @@
-import os
+from services.enricher.settings import get_settings
 
+_settings = get_settings()
 
-BOOTSTRAP = os.environ["BOOTSTRAP"]
-TOPIC_IN = os.environ["TOPIC_IN"]
-TOPIC_OUT = os.environ["TOPIC_OUT"]
-TOPIC_DLQ = os.environ["TOPIC_DLQ"]
-GROUP_ID = os.environ.get("GROUP_ID", "support-enricher")
-DATABASE_URL = os.environ["DATABASE_URL"]
-MODEL = os.environ.get("MODEL", "claude-sonnet-4-5-20250929")
+BOOTSTRAP = _settings.bootstrap
+TOPIC_IN = _settings.topic_in
+TOPIC_OUT = _settings.topic_out
+TOPIC_DLQ = _settings.topic_dlq
+GROUP_ID = _settings.group_id
+DATABASE_URL = _settings.database_url
+MODEL = _settings.model
+EMBEDDING_MODEL = _settings.embedding_model
+KB_TOP_K = _settings.kb_top_k
