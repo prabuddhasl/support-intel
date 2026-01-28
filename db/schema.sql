@@ -20,3 +20,32 @@ CREATE TABLE IF NOT EXISTS processed_events (
   event_id TEXT PRIMARY KEY,
   processed_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS kb_documents (
+  id SERIAL PRIMARY KEY,
+  filename TEXT NOT NULL,
+  title TEXT,
+  content_type TEXT,
+  sha256 TEXT NOT NULL,
+  size_bytes INTEGER,
+  source TEXT,
+  source_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS kb_chunks (
+  id SERIAL PRIMARY KEY,
+  doc_id INTEGER NOT NULL REFERENCES kb_documents(id) ON DELETE CASCADE,
+  chunk_index INTEGER NOT NULL,
+  heading_path TEXT,
+  content TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS kb_chunks_doc_id_idx ON kb_chunks(doc_id);
+
+ALTER TABLE IF EXISTS kb_documents
+  ADD COLUMN IF NOT EXISTS title TEXT,
+  ADD COLUMN IF NOT EXISTS source_url TEXT;
+
+ALTER TABLE IF EXISTS kb_chunks
+  ADD COLUMN IF NOT EXISTS heading_path TEXT;

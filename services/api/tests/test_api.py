@@ -1,4 +1,5 @@
 import json
+import sys
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
@@ -213,3 +214,124 @@ def test_get_sentiments(client, monkeypatch):
     resp = client.get("/sentiments")
     assert resp.status_code == 200
     assert resp.json() == ["negative", "positive"]
+
+
+def test_kb_chunk_text_heading_paragraph():
+    text = """# Title
+
+## Section A
+Paragraph one.
+
+Paragraph two.
+"""
+    chunks = app._chunk_text(text, chunk_size=200, overlap=20)
+    assert len(chunks) == 2
+    assert chunks[0]["content"].startswith("# Title")
+    assert "## Section A" in chunks[1]["content"]
+    assert "Paragraph one." in chunks[1]["content"]
+    assert chunks[1]["heading_path"].endswith("Section A")
+
+
+def test_kb_upload_ingests_txt(client, monkeypatch):
+    if getattr(sys.modules.get("python_multipart"), "__fake__", False):
+        pytest.skip("python-multipart not installed in test environment")
+
+    conn = _make_conn()
+
+    select_cursor = MagicMock()
+    select_cursor.fetchone.return_value = None
+    insert_cursor = MagicMock()
+    insert_cursor.fetchone.return_value = (1,)
+
+    def _execute_side_effect(*args, **kwargs):
+        if "SELECT id FROM kb_documents" in args[0]:
+            return select_cursor
+        if "INSERT INTO kb_documents" in args[0]:
+            return insert_cursor
+        return None
+
+    conn.execute.side_effect = _execute_side_effect
+    monkeypatch.setattr(app, "get_db_connection", lambda: conn)
+
+    payload = b"""# Title
+
+## Section A
+Paragraph one.
+"""
+    resp = client.post(
+        "/kb/upload?source=unit-test&source_url=https://example.com/kb",
+        files={"file": ("sample.txt", payload, "text/plain")},
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["status"] == "ingested"
+    assert body["doc_id"] == 1
+    assert body["chunks"] >= 1
+
+
+def test_kb_upload_deduplicates_by_sha(client, monkeypatch):
+    if getattr(sys.modules.get("python_multipart"), "__fake__", False):
+        pytest.skip("python-multipart not installed in test environment")
+
+    conn = _make_conn()
+    select_cursor = MagicMock()
+    select_cursor.fetchone.return_value = (42,)
+    conn.execute.return_value = select_cursor
+    monkeypatch.setattr(app, "get_db_connection", lambda: conn)
+
+    payload = b"""# Title
+
+## Section A
+Paragraph one.
+"""
+    resp = client.post(
+        "/kb/upload?source_url=https://example.com/kb",
+        files={"file": ("sample.txt", payload, "text/plain")},
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["status"] == "already_ingested"
+    assert body["doc_id"] == 42
+
+
+def test_kb_search(client, monkeypatch):
+    conn = _make_conn()
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [
+        (10, 1, 0, "Refund policy: 14 days", "sample_kb.md", "help_center"),
+        (11, 1, 1, "Refunds within 14 days", "sample_kb.md", "help_center"),
+    ]
+    conn.execute.return_value = cursor
+    monkeypatch.setattr(app, "get_db_connection", lambda: conn)
+
+    resp = client.get("/kb/search?q=refund&limit=2")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["query"] == "refund"
+    assert body["count"] == 2
+    assert body["results"][0]["filename"] == "sample_kb.md"
+
+
+def test_kb_upload_rejects_large_file(client, monkeypatch):
+    if getattr(sys.modules.get("python_multipart"), "__fake__", False):
+        pytest.skip("python-multipart not installed in test environment")
+
+    monkeypatch.setattr(app, "MAX_UPLOAD_BYTES", 10)
+    payload = b"x" * 20
+    resp = client.post(
+        "/kb/upload",
+        files={"file": ("sample.txt", payload, "text/plain")},
+    )
+    assert resp.status_code == 413
+
+
+def test_kb_upload_rejects_bad_content_type(client):
+    if getattr(sys.modules.get("python_multipart"), "__fake__", False):
+        pytest.skip("python-multipart not installed in test environment")
+
+    payload = b"hello"
+    resp = client.post(
+        "/kb/upload",
+        files={"file": ("sample.txt", payload, "application/pdf")},
+    )
+    assert resp.status_code == 400
