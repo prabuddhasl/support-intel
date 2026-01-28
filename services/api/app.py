@@ -1,0 +1,455 @@
+import json
+import uuid
+from datetime import datetime, timezone
+from typing import Optional, List
+
+import psycopg
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, ConfigDict
+from confluent_kafka import Producer
+from jsonschema import validate, ValidationError
+
+try:
+    from services.api.config import DATABASE_URL, BOOTSTRAP, TOPIC_IN
+except Exception:  # pragma: no cover - fallback for direct script execution
+    from config import DATABASE_URL, BOOTSTRAP, TOPIC_IN
+try:
+    from services.common.schemas import TICKET_EVENT_SCHEMA
+except Exception:  # pragma: no cover - fallback for direct script execution
+    from common.schemas import TICKET_EVENT_SCHEMA
+
+# Initialize Kafka producer
+producer = Producer({"bootstrap.servers": BOOTSTRAP})
+
+app = FastAPI(
+    title="Support Intel API",
+    description="REST API for querying AI-enriched support tickets",
+    version="1.0.0"
+)
+
+# Enable CORS for web dashboard access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Request models
+class CreateTicketRequest(BaseModel):
+    ticket_id: Optional[str] = Field(None, description="Ticket ID (auto-generated if not provided)")
+    subject: str = Field(..., min_length=1, description="Ticket subject")
+    body: str = Field(..., min_length=1, description="Ticket body/description")
+    channel: str = Field(..., description="Channel (email, chat, phone, etc.)")
+    priority: str = Field(..., description="Priority (low, normal, high, critical)")
+    customer_id: Optional[str] = Field(None, description="Customer ID")
+
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "subject": "Cannot login to account",
+            "body": "I've been trying to log in but keep getting errors",
+            "channel": "email",
+            "priority": "high",
+            "customer_id": "CUST-123"
+        }
+    })
+
+
+class CreateTicketResponse(BaseModel):
+    event_id: str
+    ticket_id: str
+    message: str
+    status: str
+
+
+# Response models
+class EnrichedTicket(BaseModel):
+    ticket_id: str
+    last_event_id: Optional[str]
+    subject: Optional[str]
+    body: Optional[str]
+    channel: Optional[str]
+    priority: Optional[str]
+    customer_id: Optional[str]
+    status: str
+    summary: Optional[str]
+    category: Optional[str]
+    sentiment: Optional[str]
+    risk: Optional[float]
+    suggested_reply: Optional[str]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TicketListResponse(BaseModel):
+    tickets: List[EnrichedTicket]
+    total: int
+    page: int
+    page_size: int
+
+
+class AnalyticsSummary(BaseModel):
+    total_tickets: int
+    avg_risk: float
+    high_risk_count: int
+    by_category: dict
+    by_sentiment: dict
+
+
+class HealthResponse(BaseModel):
+    status: str
+    database: str
+    timestamp: str
+
+
+# Database connection helper
+def get_db_connection():
+    try:
+        return psycopg.connect(DATABASE_URL)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
+
+
+# Endpoints
+@app.get("/", response_model=dict)
+async def root():
+    """Root endpoint with API information"""
+    return {
+        "service": "Support Intel API",
+        "version": "1.0.0",
+        "endpoints": {
+            "health": "/health",
+            "create_ticket": "POST /tickets",
+            "list_tickets": "GET /tickets",
+            "ticket_by_id": "/tickets/{ticket_id}",
+            "analytics": "/analytics/summary"
+        }
+    }
+
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    """Health check endpoint for monitoring"""
+    try:
+        with get_db_connection() as conn:
+            conn.execute("SELECT 1")
+        db_status = "healthy"
+    except Exception as e:
+        db_status = f"unhealthy: {str(e)}"
+
+    return HealthResponse(
+        status="healthy" if db_status == "healthy" else "degraded",
+        database=db_status,
+        timestamp=datetime.now(timezone.utc).isoformat()
+    )
+
+
+@app.post("/tickets", response_model=CreateTicketResponse, status_code=201)
+async def create_ticket(ticket: CreateTicketRequest):
+    """
+    Create a new support ticket and publish to Kafka for enrichment
+
+    The ticket will be:
+    1. Published to Kafka topic (support.tickets.v1)
+    2. Picked up by enricher service
+    3. Analyzed by Claude AI
+    4. Stored in database with enrichments
+    5. Available via GET /tickets endpoints
+
+    Example:
+    ```json
+    {
+      "subject": "Cannot access dashboard",
+      "body": "Getting a blank page when I try to load my dashboard",
+      "channel": "email",
+      "priority": "high",
+      "customer_id": "CUST-123"
+    }
+    ```
+    """
+    try:
+        # Generate IDs if not provided
+        event_id = f"evt-{uuid.uuid4().hex[:12]}"
+        ticket_id = ticket.ticket_id or f"TICKET-{uuid.uuid4().hex[:8].upper()}"
+
+        # Write raw ticket to DB immediately so it's visible via GET
+        with get_db_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO enriched_tickets(ticket_id, last_event_id, subject, body, channel, priority, customer_id, status, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', NOW(), NOW())
+                ON CONFLICT (ticket_id) DO UPDATE SET
+                  last_event_id=EXCLUDED.last_event_id,
+                  subject=EXCLUDED.subject,
+                  body=EXCLUDED.body,
+                  channel=EXCLUDED.channel,
+                  priority=EXCLUDED.priority,
+                  customer_id=EXCLUDED.customer_id,
+                  status='pending',
+                  updated_at=NOW()
+                """,
+                (ticket_id, event_id, ticket.subject, ticket.body, ticket.channel, ticket.priority, ticket.customer_id)
+            )
+            conn.commit()
+
+        # Build ticket event
+        ticket_event = {
+            "event_id": event_id,
+            "ticket_id": ticket_id,
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "subject": ticket.subject,
+            "body": ticket.body,
+            "channel": ticket.channel,
+            "priority": ticket.priority,
+        }
+
+        if ticket.customer_id:
+            ticket_event["customer_id"] = ticket.customer_id
+
+        # Validate event schema before publishing
+        try:
+            validate(instance=ticket_event, schema=TICKET_EVENT_SCHEMA)
+        except ValidationError as e:
+            raise HTTPException(status_code=500, detail=f"Ticket event invalid: {str(e)}")
+
+        # Publish to Kafka for async enrichment
+        producer.produce(
+            TOPIC_IN,
+            value=json.dumps(ticket_event).encode("utf-8"),
+            callback=lambda err, msg: print(f"Delivery failed: {err}" if err else f"Delivered to {msg.topic()}")
+        )
+        producer.flush(timeout=5)
+
+        return CreateTicketResponse(
+            event_id=event_id,
+            ticket_id=ticket_id,
+            message=f"Ticket created and queued for enrichment",
+            status="pending"
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create ticket: {str(e)}")
+
+
+@app.get("/tickets", response_model=TicketListResponse)
+async def list_tickets(
+    risk_min: Optional[float] = Query(None, ge=0, le=1, description="Minimum risk score"),
+    risk_max: Optional[float] = Query(None, ge=0, le=1, description="Maximum risk score"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    sentiment: Optional[str] = Query(None, description="Filter by sentiment"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    sort_by: str = Query("updated_at", description="Sort field (updated_at, risk, ticket_id)"),
+    sort_order: str = Query("desc", description="Sort order (asc, desc)")
+):
+    """
+    Get list of enriched tickets with optional filtering and pagination
+
+    Example queries:
+    - /tickets?risk_min=0.7 - High risk tickets only
+    - /tickets?sentiment=negative - Negative sentiment tickets
+    - /tickets?category=billing&page=2 - Second page of billing tickets
+    """
+    with get_db_connection() as conn:
+        # Build WHERE clause
+        conditions = []
+        params = []
+
+        if risk_min is not None:
+            conditions.append("risk >= %s")
+            params.append(risk_min)
+
+        if risk_max is not None:
+            conditions.append("risk <= %s")
+            params.append(risk_max)
+
+        if category:
+            conditions.append("category = %s")
+            params.append(category)
+
+        if sentiment:
+            conditions.append("sentiment = %s")
+            params.append(sentiment)
+
+        where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+        # Validate sort parameters
+        valid_sort_fields = ["updated_at", "risk", "ticket_id"]
+        if sort_by not in valid_sort_fields:
+            sort_by = "updated_at"
+
+        if sort_order.lower() not in ["asc", "desc"]:
+            sort_order = "desc"
+
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM enriched_tickets {where_clause}"
+        total = conn.execute(count_query, params).fetchone()[0]
+
+        # Get paginated results
+        offset = (page - 1) * page_size
+        params_with_pagination = params + [page_size, offset]
+
+        query = f"""
+            SELECT ticket_id, last_event_id, subject, body, channel, priority, customer_id, status,
+                   summary, category, sentiment, risk, suggested_reply, created_at, updated_at
+            FROM enriched_tickets
+            {where_clause}
+            ORDER BY {sort_by} {sort_order}
+            LIMIT %s OFFSET %s
+        """
+
+        rows = conn.execute(query, params_with_pagination).fetchall()
+
+        tickets = [
+            EnrichedTicket(
+                ticket_id=row[0],
+                last_event_id=row[1],
+                subject=row[2],
+                body=row[3],
+                channel=row[4],
+                priority=row[5],
+                customer_id=row[6],
+                status=row[7],
+                summary=row[8],
+                category=row[9],
+                sentiment=row[10],
+                risk=row[11],
+                suggested_reply=row[12],
+                created_at=row[13],
+                updated_at=row[14]
+            )
+            for row in rows
+        ]
+
+        return TicketListResponse(
+            tickets=tickets,
+            total=total,
+            page=page,
+            page_size=page_size
+        )
+
+
+@app.get("/tickets/{ticket_id}", response_model=EnrichedTicket)
+async def get_ticket(ticket_id: str):
+    """Get a specific ticket by ID"""
+    with get_db_connection() as conn:
+        query = """
+            SELECT ticket_id, last_event_id, subject, body, channel, priority, customer_id, status,
+                   summary, category, sentiment, risk, suggested_reply, created_at, updated_at
+            FROM enriched_tickets
+            WHERE ticket_id = %s
+        """
+        row = conn.execute(query, (ticket_id,)).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")
+
+        return EnrichedTicket(
+            ticket_id=row[0],
+            last_event_id=row[1],
+            subject=row[2],
+            body=row[3],
+            channel=row[4],
+            priority=row[5],
+            customer_id=row[6],
+            status=row[7],
+            summary=row[8],
+            category=row[9],
+            sentiment=row[10],
+            risk=row[11],
+            suggested_reply=row[12],
+            created_at=row[13],
+            updated_at=row[14]
+        )
+
+
+@app.get("/analytics/summary", response_model=AnalyticsSummary)
+async def get_analytics_summary():
+    """
+    Get analytics summary across all tickets
+
+    Returns aggregated statistics including:
+    - Total ticket count
+    - Average risk score
+    - High-risk ticket count (risk > 0.7)
+    - Breakdown by category
+    - Breakdown by sentiment
+    """
+    with get_db_connection() as conn:
+        # Total tickets and average risk
+        summary_query = """
+            SELECT
+                COUNT(*) as total,
+                COALESCE(AVG(risk), 0) as avg_risk,
+                COUNT(CASE WHEN risk > 0.7 THEN 1 END) as high_risk_count
+            FROM enriched_tickets
+        """
+        summary_row = conn.execute(summary_query).fetchone()
+
+        # By category
+        category_query = """
+            SELECT category, COUNT(*) as count
+            FROM enriched_tickets
+            WHERE category IS NOT NULL
+            GROUP BY category
+            ORDER BY count DESC
+        """
+        category_rows = conn.execute(category_query).fetchall()
+        by_category = {row[0]: row[1] for row in category_rows}
+
+        # By sentiment
+        sentiment_query = """
+            SELECT sentiment, COUNT(*) as count
+            FROM enriched_tickets
+            WHERE sentiment IS NOT NULL
+            GROUP BY sentiment
+            ORDER BY count DESC
+        """
+        sentiment_rows = conn.execute(sentiment_query).fetchall()
+        by_sentiment = {row[0]: row[1] for row in sentiment_rows}
+
+        return AnalyticsSummary(
+            total_tickets=summary_row[0],
+            avg_risk=round(float(summary_row[1] or 0), 3),
+            high_risk_count=summary_row[2],
+            by_category=by_category,
+            by_sentiment=by_sentiment
+        )
+
+
+@app.get("/categories", response_model=List[str])
+async def get_categories():
+    """Get list of all unique categories"""
+    with get_db_connection() as conn:
+        query = """
+            SELECT DISTINCT category
+            FROM enriched_tickets
+            WHERE category IS NOT NULL
+            ORDER BY category
+        """
+        rows = conn.execute(query).fetchall()
+        return [row[0] for row in rows]
+
+
+@app.get("/sentiments", response_model=List[str])
+async def get_sentiments():
+    """Get list of all unique sentiments"""
+    with get_db_connection() as conn:
+        query = """
+            SELECT DISTINCT sentiment
+            FROM enriched_tickets
+            WHERE sentiment IS NOT NULL
+            ORDER BY sentiment
+        """
+        rows = conn.execute(query).fetchall()
+        return [row[0] for row in rows]
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
