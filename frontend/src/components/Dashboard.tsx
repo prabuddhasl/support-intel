@@ -56,8 +56,8 @@ export default function Dashboard() {
 
   // Load filter options on mount
   useEffect(() => {
-    fetchCategories().then(setCategories).catch(() => {})
-    fetchSentiments().then(setSentimentOptions).catch(() => {})
+    fetchCategories().then(setCategories).catch(() => undefined)
+    fetchSentiments().then(setSentimentOptions).catch(() => undefined)
   }, [])
 
   // Load tickets whenever filters change
@@ -69,7 +69,9 @@ export default function Dashboard() {
         setTickets(data.tickets)
         setTotal(data.total)
       })
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : 'Request failed'),
+      )
       .finally(() => setLoading(false))
   }, [filters])
 
@@ -109,7 +111,7 @@ export default function Dashboard() {
         <div className="filter-group">
           <label>Category</label>
           <select
-            value={filters.category || ''}
+            value={filters.category ?? ''}
             onChange={(e) => updateFilter({ category: e.target.value || undefined })}
           >
             <option value="">All</option>
@@ -122,7 +124,7 @@ export default function Dashboard() {
         <div className="filter-group">
           <label>Sentiment</label>
           <select
-            value={filters.sentiment || ''}
+            value={filters.sentiment ?? ''}
             onChange={(e) => updateFilter({ sentiment: e.target.value || undefined })}
           >
             <option value="">All</option>
@@ -174,13 +176,17 @@ export default function Dashboard() {
               <tr><td colSpan={8} className="table-empty">No tickets found</td></tr>
             ) : (
               tickets.map((t) => (
-                <tr key={t.ticket_id} className="ticket-row" onClick={() => navigate(`/tickets/${t.ticket_id}`)}>
+                <tr
+                  key={t.ticket_id}
+                  className="ticket-row"
+                  onClick={() => void navigate(`/tickets/${t.ticket_id}`)}
+                >
                   <td className="cell-id">{t.ticket_id}</td>
-                  <td className="cell-subject">{t.subject || '—'}</td>
-                  <td><span className="badge badge-category">{t.category || '—'}</span></td>
+                  <td className="cell-subject">{t.subject ?? '—'}</td>
+                  <td><span className="badge badge-category">{t.category ?? '—'}</span></td>
                   <td>
                     <span className="badge" style={{ color: sentimentColor(t.sentiment) }}>
-                      {t.sentiment || '—'}
+                      {t.sentiment ?? '—'}
                     </span>
                   </td>
                   <td>
@@ -188,7 +194,7 @@ export default function Dashboard() {
                       {t.risk !== null ? t.risk.toFixed(2) : '—'}
                     </span>
                   </td>
-                  <td><span className={`badge badge-priority-${t.priority}`}>{t.priority || '—'}</span></td>
+                  <td><span className={`badge badge-priority-${t.priority}`}>{t.priority ?? '—'}</span></td>
                   <td><span className={`badge badge-status-${t.status}`}>{statusLabel(t.status)}</span></td>
                   <td className="cell-date">{formatDate(t.updated_at)}</td>
                 </tr>

@@ -7,11 +7,11 @@ export default defineConfig({
   server: {
     host: true,
     proxy: {
-      '/tickets': process.env.API_URL || 'http://localhost:8000',
-      '/analytics': process.env.API_URL || 'http://localhost:8000',
-      '/categories': process.env.API_URL || 'http://localhost:8000',
-      '/sentiments': process.env.API_URL || 'http://localhost:8000',
-      '/health': process.env.API_URL || 'http://localhost:8000',
+      '/tickets': process.env.API_URL ?? 'http://localhost:8000',
+      '/analytics': process.env.API_URL ?? 'http://localhost:8000',
+      '/categories': process.env.API_URL ?? 'http://localhost:8000',
+      '/sentiments': process.env.API_URL ?? 'http://localhost:8000',
+      '/health': process.env.API_URL ?? 'http://localhost:8000',
     },
   },
 })

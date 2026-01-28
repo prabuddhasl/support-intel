@@ -6,6 +6,8 @@ COPY services/api/requirements.txt ./services/api/requirements.txt
 RUN pip install --no-cache-dir -r services/api/requirements.txt
 
 COPY services ./services
+COPY alembic.ini ./alembic.ini
+COPY migrations ./migrations
 ENV PYTHONPATH=/app
 
 EXPOSE 8000

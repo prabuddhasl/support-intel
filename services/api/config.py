@@ -1,6 +1,7 @@
-import os
+from services.api.settings import get_settings
 
+_settings = get_settings()
 
-DATABASE_URL = os.environ["DATABASE_URL"]
-BOOTSTRAP = os.environ.get("BOOTSTRAP", "kafka:9092")
-TOPIC_IN = os.environ.get("TOPIC_IN", "support.tickets.v1")
+DATABASE_URL = _settings.database_url
+BOOTSTRAP = _settings.bootstrap
+TOPIC_IN = _settings.topic_in

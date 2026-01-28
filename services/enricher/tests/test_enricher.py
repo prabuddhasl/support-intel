@@ -1,8 +1,10 @@
 import importlib.util
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
+
+from jsonschema import validate
 
 # Avoid module name collision with services/api/app.py.
 _app_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app.py"))
@@ -20,23 +22,30 @@ call_claude = _mod.call_claude
 
 # ── now_iso ──────────────────────────────────────────────────────────
 
+
 def test_now_iso_returns_valid_utc_isoformat():
     result = now_iso()
     parsed = datetime.fromisoformat(result)
     assert parsed.tzinfo is not None
-    assert parsed.tzinfo == timezone.utc
+    assert parsed.tzinfo == UTC
 
 
 def test_now_iso_is_current_time():
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     result = datetime.fromisoformat(now_iso())
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
     assert before <= result <= after
 
 
 # ── dlq ──────────────────────────────────────────────────────────────
 
-def _make_mock_msg(value=b'{"ticket_id":"T-1"}', topic="support.tickets.v1", partition=0, offset=42):
+
+def _make_mock_msg(
+    value=b'{"ticket_id":"T-1"}',
+    topic="support.tickets.v1",
+    partition=0,
+    offset=42,
+):
     msg = MagicMock()
     msg.value.return_value = value
     msg.topic.return_value = topic
@@ -92,6 +101,7 @@ def test_dlq_handles_non_utf8_payload():
 
 # ── already_processed ────────────────────────────────────────────────
 
+
 def test_already_processed_returns_true_when_exists():
     conn = MagicMock()
     conn.execute.return_value.fetchone.return_value = (1,)
@@ -110,6 +120,7 @@ def test_already_processed_returns_false_when_not_exists():
 
 # ── mark_processed ───────────────────────────────────────────────────
 
+
 def test_mark_processed_executes_insert():
     conn = MagicMock()
 
@@ -123,6 +134,7 @@ def test_mark_processed_executes_insert():
 
 
 # ── _mark_failed ─────────────────────────────────────────────────────
+
 
 def test_mark_failed_updates_ticket_status():
     conn = MagicMock()
@@ -178,13 +190,15 @@ def _mock_claude_response(text):
 
 @patch.object(_mod, "client")
 def test_call_claude_parses_clean_json(mock_client):
-    response_json = json.dumps({
-        "summary": "Payment issue",
-        "category": "billing",
-        "sentiment": "negative",
-        "risk": 0.8,
-        "suggested_reply": "We apologize for the issue.",
-    })
+    response_json = json.dumps(
+        {
+            "summary": "Payment issue",
+            "category": "billing",
+            "sentiment": "negative",
+            "risk": 0.8,
+            "suggested_reply": "We apologize for the issue.",
+        }
+    )
     mock_client.messages.create.return_value = _mock_claude_response(response_json)
 
     result = call_claude(SAMPLE_TICKET)
@@ -202,9 +216,28 @@ def test_call_claude_parses_clean_json(mock_client):
     assert len(call_kwargs["messages"]) == 1
 
 
+def test_enriched_event_schema_contract():
+    event = {
+        "schema_version": _mod.ENRICHED_EVENT_SCHEMA_VERSION,
+        "event_id": "evt-12345678",
+        "ticket_id": "T-1",
+        "ts": datetime.now(UTC).isoformat(),
+        "summary": "Payment issue",
+        "category": "billing",
+        "sentiment": "negative",
+        "risk": 0.8,
+        "suggested_reply": "We apologize for the issue.",
+    }
+
+    validate(instance=event, schema=_mod.ENRICHED_EVENT_SCHEMA)
+
+
 @patch.object(_mod, "client")
 def test_call_claude_strips_json_markdown_fences(mock_client):
-    raw = '```json\n{"summary":"s","category":"c","sentiment":"n","risk":0.5,"suggested_reply":"r"}\n```'
+    raw = (
+        '```json\n{"summary":"s","category":"c","sentiment":"n","risk":0.5,'
+        '"suggested_reply":"r"}\n```'
+    )
     mock_client.messages.create.return_value = _mock_claude_response(raw)
 
     result = call_claude(SAMPLE_TICKET)
@@ -214,7 +247,10 @@ def test_call_claude_strips_json_markdown_fences(mock_client):
 
 @patch.object(_mod, "client")
 def test_call_claude_strips_plain_markdown_fences(mock_client):
-    raw = '```\n{"summary":"s","category":"c","sentiment":"n","risk":0.1,"suggested_reply":"r"}\n```'
+    raw = (
+        '```\n{"summary":"s","category":"c","sentiment":"n","risk":0.1,'
+        '"suggested_reply":"r"}\n```'
+    )
     mock_client.messages.create.return_value = _mock_claude_response(raw)
 
     result = call_claude(SAMPLE_TICKET)

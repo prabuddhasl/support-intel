@@ -2,17 +2,20 @@ import os
 import sys
 import types
 
-
 # Ensure env vars exist before importing app.py (module-level reads).
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 os.environ.setdefault("BOOTSTRAP", "localhost:9092")
 os.environ.setdefault("TOPIC_IN", "test.tickets")
+os.environ.setdefault("ENRICHER_TOPIC_IN", "test.tickets")
+os.environ.setdefault("TOPIC_OUT", "test.enriched")
+os.environ.setdefault("TOPIC_DLQ", "test.dlq")
 
 
 # Provide a minimal stub if confluent_kafka isn't installed in the test env.
 try:
     import confluent_kafka  # noqa: F401
 except Exception:
+
     class _StubProducer:
         def __init__(self, *args, **kwargs):
             pass
@@ -30,6 +33,7 @@ except Exception:
 try:
     import pypdf  # noqa: F401
 except Exception:
+
     class _StubPdfReader:
         def __init__(self, *args, **kwargs):
             self.pages = []
@@ -39,6 +43,7 @@ except Exception:
 try:
     import docx  # noqa: F401
 except Exception:
+
     class _StubDocument:
         def __init__(self, *args, **kwargs):
             self.paragraphs = []
@@ -50,6 +55,7 @@ except Exception:
 try:
     import python_multipart  # noqa: F401
 except Exception:
+
     def _parse_options_header(value):
         return value, {}
 

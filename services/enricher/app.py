@@ -1,41 +1,70 @@
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import psycopg
-from jsonschema import validate, ValidationError
-from confluent_kafka import Consumer, Producer
 from anthropic import Anthropic
+from confluent_kafka import Consumer, Producer
+from jsonschema import ValidationError, validate
 
-try:
+if TYPE_CHECKING:
     from services.enricher.config import (
         BOOTSTRAP,
+        DATABASE_URL,
+        GROUP_ID,
+        MODEL,
+        TOPIC_DLQ,
         TOPIC_IN,
         TOPIC_OUT,
-        TOPIC_DLQ,
-        GROUP_ID,
-        DATABASE_URL,
-        MODEL,
     )
-except Exception:  # pragma: no cover - fallback for direct script execution
-    from config import (
-        BOOTSTRAP,
-        TOPIC_IN,
-        TOPIC_OUT,
-        TOPIC_DLQ,
-        GROUP_ID,
-        DATABASE_URL,
-        MODEL,
-    )
+else:
+    try:
+        from services.enricher.config import (
+            BOOTSTRAP,
+            DATABASE_URL,
+            GROUP_ID,
+            MODEL,
+            TOPIC_DLQ,
+            TOPIC_IN,
+            TOPIC_OUT,
+        )
+    except Exception:  # pragma: no cover - fallback for direct script execution
+        from config import (
+            BOOTSTRAP,
+            DATABASE_URL,
+            GROUP_ID,
+            MODEL,
+            TOPIC_DLQ,
+            TOPIC_IN,
+            TOPIC_OUT,
+        )
 
 client = Anthropic()  # uses ANTHROPIC_API_KEY env var :contentReference[oaicite:1]{index=1}
 
-try:
-    from services.common.schemas import TICKET_EVENT_SCHEMA
-except Exception:  # pragma: no cover - fallback for direct script execution
-    from common.schemas import TICKET_EVENT_SCHEMA
+if TYPE_CHECKING:
+    from services.common.schemas import (
+        ENRICHED_EVENT_SCHEMA,
+        ENRICHED_EVENT_SCHEMA_VERSION,
+        TICKET_EVENT_SCHEMA,
+    )
+else:
+    try:
+        from services.common.schemas import (
+            ENRICHED_EVENT_SCHEMA,
+            ENRICHED_EVENT_SCHEMA_VERSION,
+            TICKET_EVENT_SCHEMA,
+        )
+    except Exception:  # pragma: no cover - fallback for direct script execution
+        from common.schemas import (
+            ENRICHED_EVENT_SCHEMA,
+            ENRICHED_EVENT_SCHEMA_VERSION,
+            TICKET_EVENT_SCHEMA,
+        )
+
 
 def now_iso():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
+
 
 def dlq(producer: Producer, msg, err: str):
     payload = msg.value()
@@ -55,12 +84,18 @@ def dlq(producer: Producer, msg, err: str):
     producer.produce(TOPIC_DLQ, value=json.dumps(rec).encode("utf-8"))
     producer.flush(5)
 
+
 def already_processed(conn, event_id: str) -> bool:
     row = conn.execute("SELECT 1 FROM processed_events WHERE event_id=%s", (event_id,)).fetchone()
     return row is not None
 
+
 def mark_processed(conn, event_id: str):
-    conn.execute("INSERT INTO processed_events(event_id) VALUES (%s) ON CONFLICT DO NOTHING", (event_id,))
+    conn.execute(
+        "INSERT INTO processed_events(event_id) VALUES (%s) ON CONFLICT DO NOTHING",
+        (event_id,),
+    )
+
 
 def _mark_failed(conn, msg):
     """Best-effort: set status='failed' if the ticket_id can be extracted."""
@@ -71,12 +106,14 @@ def _mark_failed(conn, msg):
             tid = payload.get("ticket_id")
             if tid:
                 conn.execute(
-                    "UPDATE enriched_tickets SET status='failed', updated_at=NOW() WHERE ticket_id=%s",
-                    (tid,)
+                    "UPDATE enriched_tickets SET status='failed', updated_at=NOW()"
+                    " WHERE ticket_id=%s",
+                    (tid,),
                 )
                 conn.commit()
     except Exception:
         conn.rollback()
+
 
 def call_claude(ticket: dict) -> dict:
     # Keep it simple: force JSON output.
@@ -105,7 +142,9 @@ def call_claude(ticket: dict) -> dict:
     text = ""
     for block in resp.content:
         if getattr(block, "type", None) == "text":
-            text += block.text
+            text_block = getattr(block, "text", None)
+            if isinstance(text_block, str):
+                text += text_block
 
     # Strip markdown code blocks if present
     text = text.strip()
@@ -119,13 +158,16 @@ def call_claude(ticket: dict) -> dict:
 
     return json.loads(text)
 
+
 def main():
-    consumer = Consumer({
-        "bootstrap.servers": BOOTSTRAP,
-        "group.id": GROUP_ID,
-        "auto.offset.reset": "earliest",
-        "enable.auto.commit": False,  # we commit only after success/DLQ
-    })
+    consumer = Consumer(
+        {
+            "bootstrap.servers": BOOTSTRAP,
+            "group.id": GROUP_ID,
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,  # we commit only after success/DLQ
+        }
+    )
     producer = Producer({"bootstrap.servers": BOOTSTRAP})
 
     consumer.subscribe([TOPIC_IN])
@@ -164,7 +206,10 @@ def main():
 
                 conn.execute(
                     """
-                    INSERT INTO enriched_tickets(ticket_id, last_event_id, subject, body, channel, priority, customer_id, status, summary, category, sentiment, risk, suggested_reply, updated_at)
+                    INSERT INTO enriched_tickets(
+                      ticket_id, last_event_id, subject, body, channel, priority, customer_id,
+                      status, summary, category, sentiment, risk, suggested_reply, updated_at
+                    )
                     VALUES (%s,%s,%s,%s,%s,%s,%s,'enriched',%s,%s,%s,%s,%s,NOW())
                     ON CONFLICT (ticket_id) DO UPDATE SET
                       last_event_id=EXCLUDED.last_event_id,
@@ -189,17 +234,19 @@ def main():
                         enriched.get("sentiment"),
                         risk,
                         enriched.get("suggested_reply"),
-                    )
+                    ),
                 )
                 mark_processed(conn, event_id)
                 conn.commit()
 
                 out = {
+                    "schema_version": ENRICHED_EVENT_SCHEMA_VERSION,
                     "event_id": event_id,
                     "ticket_id": ticket["ticket_id"],
                     "ts": now_iso(),
                     **enriched,
                 }
+                validate(instance=out, schema=ENRICHED_EVENT_SCHEMA)
                 producer.produce(TOPIC_OUT, value=json.dumps(out).encode("utf-8"))
                 producer.flush(5)
 
@@ -214,12 +261,14 @@ def main():
                 print(f"[DLQ] {e} @ {msg.topic()}[{msg.partition()}] offset={msg.offset()}")
 
             except Exception as e:
-                # transient-ish: rate limits etc. Anthropic returns 429 with retry-after header; in prod you honor it. :contentReference[oaicite:3]{index=3}
+                # Transient-ish: rate limits etc. Anthropic returns 429 with retry-after
+                # header; in prod you should honor it. :contentReference[oaicite:3]{index=3}
                 conn.rollback()
                 dlq(producer, msg, f"unexpected: {e}")
                 _mark_failed(conn, msg)
                 consumer.commit(message=msg, asynchronous=False)
                 print(f"[DLQ] unexpected: {e}")
+
 
 if __name__ == "__main__":
     main()

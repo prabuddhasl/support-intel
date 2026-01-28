@@ -25,8 +25,16 @@ services:
       POSTGRES_DB: supportintel
     ports:
       - "5432:5432"
-    volumes:
-      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+
+  migrate:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/supportintel
+    depends_on:
+      - postgres
+    command: ["alembic", "upgrade", "head"]
 
   enricher:
     build:
@@ -34,7 +42,7 @@ services:
       dockerfile: services/enricher/Dockerfile
     environment:
       BOOTSTRAP: kafka:9092
-      TOPIC_IN: support.tickets.v1
+      ENRICHER_TOPIC_IN: support.tickets.v1
       TOPIC_OUT: support.enriched.v1
       TOPIC_DLQ: support.dlq.v1
       GROUP_ID: support-enricher
@@ -58,6 +66,7 @@ services:
     depends_on:
       - postgres
       - kafka
+      - migrate
 
   frontend:
     build: ./frontend

@@ -59,9 +59,152 @@ docker compose ps
 You should see:
 - `kafka` - Running on port 29092
 - `support-intel-postgres-1` - Running on port 5432
+- `support-intel-migrate-1` - Runs Alembic migrations then exits
 - `support-intel-enricher-1` - Running
 - `support-intel-api-1` - Running on port 8000
 - `pgadmin` - Running on port 5050 (optional DB GUI)
+
+## Developer Ergonomics (Make Targets)
+
+Common shortcuts:
+```
+make up              # docker compose up -d --build
+make down            # docker compose down
+make reset           # docker compose down -v
+make start           # clean slate + rebuild + migrate + start enricher
+make ps              # docker compose ps
+make logs            # tail logs
+make logs-enricher   # tail enricher logs
+make enricher        # start only enricher
+make status          # docker compose ps (alias)
+```
+
+Tooling:
+```
+make install-python-dev
+make install-frontend
+make install-customer-portal
+```
+
+Quality checks:
+```
+make lint
+make test
+```
+
+## Database Migrations
+
+Migrations are managed with Alembic (see `migrations/versions`).
+
+### Run migrations locally
+```
+export DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/supportintel
+make migrate
+```
+
+### Existing databases (pre-migrations)
+If your database was created via `db/schema.sql`, Alembic will try to create tables that already exist.
+Use one of these:
+1) Fresh DB (recommended for local dev): drop the DB volume and rerun migrations.
+2) Mark as migrated: `alembic stamp head`
+
+### Create a new migration
+```
+alembic revision -m "describe change"
+```
+
+### Migration 101 (example)
+Goal: add a `sla_breach` boolean to `enriched_tickets`.
+
+1) Create a migration file:
+```
+alembic revision -m "add sla_breach to enriched_tickets"
+```
+
+2) Edit the new migration:
+```py
+def upgrade() -> None:
+    op.add_column("enriched_tickets", sa.Column("sla_breach", sa.Boolean, server_default="false"))
+
+def downgrade() -> None:
+    op.drop_column("enriched_tickets", "sla_breach")
+```
+
+3) Apply it:
+```
+make migrate
+```
+
+## Service Contracts
+
+These are stable, versioned contracts. Breaking changes require a schema version bump and a migration plan.
+
+### API Error Contract
+
+All non-2xx responses return a consistent error payload.
+
+Shape:
+```
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "details": "object | array | null",
+    "request_id": "string | null"
+  }
+}
+```
+
+Notes:
+- `code` is a stable identifier (e.g., `validation_error`, `http_404`, `http_500`).
+- `message` is human-readable and safe to surface.
+- `details` may include validation errors or extra context.
+- `request_id` is echoed from `X-Request-Id` or generated server-side.
+- API responses include `X-Request-Id` header.
+
+### Kafka Event Schemas
+
+#### Ticket Event (support.tickets.v1)
+
+Versioned schema: `TICKET_EVENT_SCHEMA_VERSION = 1`
+
+Required fields:
+- `schema_version` (int, enum [1])
+- `event_id` (string)
+- `ticket_id` (string)
+- `ts` (string, ISO 8601)
+- `subject` (string)
+- `body` (string)
+- `channel` (string)
+- `priority` (string)
+
+Optional fields:
+- `customer_id` (string)
+
+Compatibility rules:
+- New optional fields are backward compatible.
+- Removing/renaming required fields is breaking and requires a new version.
+- Events must include `schema_version`.
+
+#### Enriched Event (support.enriched.v1)
+
+Versioned schema: `ENRICHED_EVENT_SCHEMA_VERSION = 1`
+
+Required fields:
+- `schema_version` (int, enum [1])
+- `event_id` (string)
+- `ticket_id` (string)
+- `ts` (string, ISO 8601)
+- `summary` (string)
+- `category` (string)
+- `sentiment` (string)
+- `risk` (number 0..1)
+- `suggested_reply` (string)
+
+Compatibility rules:
+- New optional fields are backward compatible.
+- Removing/renaming required fields is breaking and requires a new version.
+- Events must include `schema_version`.
 
 ### 3. Check Enricher Logs
 
@@ -284,6 +427,7 @@ docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
 
 Copy `.env.example` to `.env` and fill in values for local runs.
 Required vars are grouped by service in `.env.example`.
+Note: the enricher uses `ENRICHER_TOPIC_IN` to avoid clashing with the API's `TOPIC_IN`.
 
 ### Docker Compose Configuration
 
@@ -450,6 +594,39 @@ pip3 install -r requirements.txt
 
 ```bash
 pytest
+```
+
+### Testing Strategy
+
+**Unit tests**
+- Pure logic: chunking, schema validation, parsing utilities.
+- Run with `pytest` (default).
+
+**Contract tests**
+- Verify Kafka event schemas (input + enriched) are stable and versioned.
+- Run with `pytest services/common/tests/test_event_contracts.py`.
+
+**Integration tests**
+- Exercise real DB read/write with a live Postgres instance.
+- Run with:
+```
+RUN_INTEGRATION_TESTS=1 DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/supportintel \
+pytest services/api/tests/test_integration_api_db.py
+```
+
+### Linting & Type Checking
+
+Python:
+```
+ruff check .
+black .
+mypy services
+```
+
+Frontends:
+```
+cd frontend && npm run lint
+cd ../customer-portal && npm run lint
 ```
 
 ## Project Structure
