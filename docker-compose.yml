@@ -48,7 +48,10 @@ services:
       GROUP_ID: support-enricher
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      RERANK_MODEL: ${RERANK_MODEL}
       KB_TOP_K: ${KB_TOP_K}
+      KB_CANDIDATES: ${KB_CANDIDATES}
+      RERANK_ENABLED: ${RERANK_ENABLED}
       DATABASE_URL: postgresql://app:app@postgres:5432/supportintel
       MODEL: claude-sonnet-4-5-20250929
     depends_on:

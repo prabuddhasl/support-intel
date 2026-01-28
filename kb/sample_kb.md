@@ -8,23 +8,28 @@
 - 2FA prompt repeatedly fails
 
 #### Troubleshooting Steps
-1. Ask the user to clear browser cache and cookies.
-2. Have the user try an incognito window or another browser.
-3. If SSO is enabled, confirm IdP status and recent changes.
-4. For 2FA, verify device time sync and reset 2FA if needed.
+1. Confirm the user is entering the correct email address for the account.
+2. If SSO is enabled, check IdP status and recent changes; managed accounts may need resets at the IdP.
+3. Ask the user to clear browser cache/cookies and retry.
+4. Have the user try an incognito/private window or another browser.
+5. Check for content blockers/extensions that might interfere with login flows.
 
 #### Escalation Criteria
 - Any report of account takeover or suspicious login activity.
-- Multiple users across the same org unable to login.
+- Multiple users across the same org unable to log in.
 
-### 1.2 Password Reset
-#### Email Delivery
-- Password reset emails are sent from no-reply@acmecloud.example.
-- Ask users to check spam/quarantine rules and corporate filters.
+### 1.2 Password Reset & Email Delivery
+#### Common Causes
+- Spam/quarantine rules or corporate filtering
+- Incorrect email address or non-existent account
+- SSO-managed accounts that don’t support direct resets
 
-#### Verification
-- If email delivery is blocked, verify the account email domain and resend.
-- If the account owner is unreachable, follow the account recovery policy.
+#### Troubleshooting Steps
+1. Verify the email address is correct and corresponds to an existing account.
+2. Ask the user to check spam/junk folders and any corporate quarantine.
+3. If applicable, ask an admin to allowlist the sender domain.
+4. Resend the reset link and ask the user to open it in a browser directly.
+5. If SSO-managed, reset through the identity provider.
 
 ### 1.3 User Roles & Permissions
 #### Role Definitions
@@ -39,47 +44,26 @@
 ---
 
 ## 2. Billing & Subscriptions
-### 2.1 Plans
-#### Starter
-- 5 seats
-- 10 dashboards
-- Email support only
-
-#### Growth
-- 25 seats
-- 50 dashboards
-- Email + chat support
-
-#### Enterprise
-- Custom seats and dashboards
-- Dedicated CSM
-- SSO + audit logs
-
-### 2.2 Invoices & Charges
-#### Billing Cycle
-- Billing occurs on the 1st of each month.
-- Proration applies to mid-cycle upgrades.
-
+### 2.1 Invoices & Charges
 #### Duplicate Charges
 - Verify payment processor logs.
 - Check for multiple orgs under the same card.
 - Escalate to Billing if duplicate charges are confirmed.
 
-### 2.3 Refund Policy
-#### Eligibility
-- Refunds within 14 days if usage is under 20% of quota.
-- Refunds are not available for Enterprise without VP approval.
-
-#### Processing
-- Standard refunds process within 5–10 business days.
-- Confirm the last invoice ID before issuing a refund.
+### 2.2 Refunds
+#### Processing Time (Customer Expectations)
+- Refunds typically appear in 5–10 business days, depending on the bank.
+- Refunds can sometimes appear as reversals (original charge disappears).
+- If the refund isn’t visible after 10 business days, ask the customer to contact their bank and provide transaction details.
 
 ---
 
 ## 3. Product & Platform
 ### 3.1 Dashboards
-#### Blank Page
-- Clear cache and disable ad blockers.
+#### Blank Page or Broken UI
+- Clear cache and cookies.
+- Disable ad blockers or content-filtering extensions.
+- Try an incognito/private window or another browser.
 - Verify the user has at least Analyst permissions.
 
 #### Slow Performance
@@ -91,7 +75,7 @@
 #### Missing Data
 - Validate data source credentials.
 - Run "Reconnect" in Settings.
-- Confirm the dataset schema matches field mappings.
+- Confirm dataset schema matches field mappings.
 
 #### Refresh Schedule
 - Standard refresh runs every 60 minutes.
@@ -100,7 +84,7 @@
 ### 3.3 Exports
 #### Export Failures
 - Only Admins can export data.
-- CSV exports have a 25MB limit.
+- Check for file size limits and permission errors.
 
 ---
 
@@ -114,7 +98,7 @@
 ### 4.2 OAuth & API Keys
 #### OAuth
 - Reconnect after OAuth scope changes.
-- Refresh tokens expire after 30 days of inactivity.
+- If refresh fails, reauthorize the connection.
 
 #### API Keys
 - Confirm scope includes read access for reporting.
@@ -179,4 +163,3 @@
 ### 9.2 Response Templates
 - If outage is confirmed, link to the status page and provide ETA if available.
 - For billing errors, acknowledge and confirm the invoice ID.
-

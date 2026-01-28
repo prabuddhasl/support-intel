@@ -34,7 +34,7 @@
   - Plan continuous KB updates (e.g., Gong transcripts) ingestion.
     - Decisions: Kafka stream vs scheduled batch; dedup strategy (hash + similarity threshold); recency weighting; versioning/is_current policy; retention window for old chunks.
 - [ ] RAG enhancements (advanced):
-  - Reranking (cross-encoder or LLM scorer) on top-k retrieval.
+  - [x] Reranking (cross-encoder or LLM scorer) on top-k retrieval.
   - Hybrid search (vector + keyword).
   - Metadata filtering (source, recency, version).
   - Chunking strategy improvements (section-aware, overlap tuning).
@@ -42,6 +42,8 @@
   - Query reformulation for better retrieval.
   - Recency weighting.
   - Attribution/self-check (require citations or ask clarifying questions).
+  - Claim-level attribution (map each sentence to a source chunk).
+  - Rerank + cite only top-n chunks.
 - [ ] Traceability + replay:
   - Add prompt/version tracking for traceability and replay.
   - Include prompt_version/model_version/event_id in enriched events and persist for replay.

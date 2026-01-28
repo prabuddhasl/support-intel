@@ -13,8 +13,11 @@ if TYPE_CHECKING:
         DATABASE_URL,
         EMBEDDING_MODEL,
         GROUP_ID,
+        KB_CANDIDATES,
         KB_TOP_K,
         MODEL,
+        RERANK_ENABLED,
+        RERANK_MODEL,
         TOPIC_DLQ,
         TOPIC_IN,
         TOPIC_OUT,
@@ -26,8 +29,11 @@ else:
             DATABASE_URL,
             EMBEDDING_MODEL,
             GROUP_ID,
+            KB_CANDIDATES,
             KB_TOP_K,
             MODEL,
+            RERANK_ENABLED,
+            RERANK_MODEL,
             TOPIC_DLQ,
             TOPIC_IN,
             TOPIC_OUT,
@@ -38,14 +44,18 @@ else:
             DATABASE_URL,
             EMBEDDING_MODEL,
             GROUP_ID,
+            KB_CANDIDATES,
             KB_TOP_K,
             MODEL,
+            RERANK_ENABLED,
+            RERANK_MODEL,
             TOPIC_DLQ,
             TOPIC_IN,
             TOPIC_OUT,
         )
 
 from services.common.embeddings import embed_text
+from services.common.reranker import rerank_chunks
 from services.common.vector_store import search_similar_chunks
 
 client = Anthropic()  # uses ANTHROPIC_API_KEY env var :contentReference[oaicite:1]{index=1}
@@ -304,7 +314,11 @@ def main():
 
                 query_text = f"{ticket.get('subject', '')}\n\n{ticket.get('body', '')}".strip()
                 query_embedding = embed_text(query_text, model_name=EMBEDDING_MODEL)
-                chunks = search_similar_chunks(conn, query_embedding, top_k=KB_TOP_K)
+                candidates = search_similar_chunks(conn, query_embedding, top_k=KB_CANDIDATES)
+                if RERANK_ENABLED:
+                    chunks = rerank_chunks(query_text, candidates, RERANK_MODEL, KB_TOP_K)
+                else:
+                    chunks = candidates[:KB_TOP_K]
                 kb_context = _format_kb_context(chunks)
 
                 enriched = call_claude(ticket, kb_context=kb_context)

@@ -13,7 +13,10 @@ class EnricherSettings(BaseSettings):
     database_url: str = Field(..., alias="DATABASE_URL")
     model: str = Field("claude-sonnet-4-5-20250929", alias="MODEL")
     embedding_model: str = Field("BAAI/bge-small-en-v1.5", alias="EMBEDDING_MODEL")
+    rerank_model: str = Field("BAAI/bge-reranker-base", alias="RERANK_MODEL")
     kb_top_k: int = Field(5, alias="KB_TOP_K")
+    kb_candidates: int = Field(20, alias="KB_CANDIDATES")
+    rerank_enabled: bool = Field(True, alias="RERANK_ENABLED")
 
 
 _settings: EnricherSettings | None = None
