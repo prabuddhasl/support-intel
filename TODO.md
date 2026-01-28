@@ -6,7 +6,7 @@
 - [x] Add test strategy: unit tests for chunking + schema validation, integration tests for API+DB, contract tests for Kafka events.
 - [x] Add type safety + linting: mypy/ruff/black for Python; ESLint + type-aware rules for frontend.
 - [x] Add local dev ergonomics: Makefile or task runner, .env.example, documented setup steps.
-- [ ] Simplify setup to a single Python env and consolidated root requirements + README steps.
+- [x] Simplify setup to a single Python env and consolidated root requirements + README steps.
 
 ## Phase 2 — Retrieval-augmented enrichment (core value)
 - [ ] Embeddings + retrieval foundations:

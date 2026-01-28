@@ -1,5 +1,5 @@
 .PHONY: \
-	migrate stamp reset start wait-db create-topics health \
+	migrate stamp reset start wait-db create-topics health doctor dev clean seed \
 	install-python-dev install-frontend install-customer-portal \
 	lint-python format-python typecheck-python lint-frontend lint-customer-portal lint \
 	test \
@@ -15,6 +15,21 @@ stamp:
 
 install-python-dev:
 	pip install -r requirements-dev.txt
+
+doctor:
+	python scripts/doctor.py
+
+dev:
+	make start
+	docker compose logs -f api enricher
+
+clean:
+	find . -name "__pycache__" -type d -prune -exec rm -rf {} +
+	find . -name "*.pyc" -delete
+
+seed:
+	bash scripts/seed_kb.sh
+	bash scripts/seed_tickets.sh
 
 install-frontend:
 	cd frontend && npm install

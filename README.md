@@ -49,9 +49,16 @@ Minimum to run:
 - `EMBEDDING_MODEL` (default: `BAAI/bge-small-en-v1.5`)
 - `KB_TOP_K` (default: `5`)
 
-Note: embeddings are computed locally via `sentence-transformers`. The first run will download the model.
+Note: embeddings are computed locally via `sentence-transformers`. The first run will download the model
+to your Hugging Face cache (typically `~/.cache/huggingface`).
 
-### 2. Start the Services (Recommended)
+### 2. Install Python Dependencies (Local Dev)
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+### 3. Start the Services (Recommended)
 
 ```bash
 cd /Users/prabuddhalakshminarayana/Desktop/support-intel
@@ -60,7 +67,7 @@ cd /Users/prabuddhalakshminarayana/Desktop/support-intel
 make start
 ```
 
-### 3. Start the Services (Manual)
+### 4. Start the Services (Manual)
 
 ```bash
 cd /Users/prabuddhalakshminarayana/Desktop/support-intel
@@ -69,7 +76,7 @@ cd /Users/prabuddhalakshminarayana/Desktop/support-intel
 docker compose up -d
 ```
 
-### 4. Verify Services are Running
+### 5. Verify Services are Running
 
 ```bash
 docker compose ps
@@ -91,6 +98,7 @@ make up              # docker compose up -d --build
 make down            # docker compose down
 make reset           # docker compose down -v
 make start           # clean slate + rebuild + wait for DB + create topics + migrate + start enricher
+make dev             # start + tail api/enricher logs
 make ps              # docker compose ps
 make logs            # tail logs
 make logs-enricher   # tail enricher logs
@@ -98,6 +106,9 @@ make enricher        # start only enricher
 make status          # docker compose ps (alias)
 make create-topics   # create Kafka topics if missing
 make health          # check API, DB, and Kafka status
+make doctor          # env + tooling checks
+make seed            # seed sample KB + tickets
+make clean           # remove python cache files
 ```
 
 Tooling:
@@ -605,11 +616,14 @@ docker logs support-intel-enricher-1 --tail=100
 ### Local Python Setup
 
 ```bash
-cd services/enricher
-pip3 install -r requirements.txt
+pip install -r requirements-dev.txt
+```
 
-cd ../api
-pip3 install -r requirements.txt
+### Local Node Setup
+
+Use `.nvmrc` to align Node.js versions:
+```bash
+nvm use
 ```
 
 ### Running Tests
