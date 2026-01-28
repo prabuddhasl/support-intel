@@ -5,3 +5,4 @@ _settings = get_settings()
 DATABASE_URL = _settings.database_url
 BOOTSTRAP = _settings.bootstrap
 TOPIC_IN = _settings.topic_in
+EMBEDDING_MODEL = _settings.embedding_model

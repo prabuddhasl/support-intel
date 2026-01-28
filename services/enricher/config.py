@@ -9,3 +9,5 @@ TOPIC_DLQ = _settings.topic_dlq
 GROUP_ID = _settings.group_id
 DATABASE_URL = _settings.database_url
 MODEL = _settings.model
+EMBEDDING_MODEL = _settings.embedding_model
+KB_TOP_K = _settings.kb_top_k

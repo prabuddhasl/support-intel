@@ -12,6 +12,8 @@ class EnricherSettings(BaseSettings):
     group_id: str = Field("support-enricher", alias="GROUP_ID")
     database_url: str = Field(..., alias="DATABASE_URL")
     model: str = Field("claude-sonnet-4-5-20250929", alias="MODEL")
+    embedding_model: str = Field("BAAI/bge-small-en-v1.5", alias="EMBEDDING_MODEL")
+    kb_top_k: int = Field(5, alias="KB_TOP_K")
 
 
 _settings: EnricherSettings | None = None

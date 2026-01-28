@@ -1,5 +1,5 @@
 .PHONY: \
-	migrate stamp reset start \
+	migrate stamp reset start wait-db create-topics health \
 	install-python-dev install-frontend install-customer-portal \
 	lint-python format-python typecheck-python lint-frontend lint-customer-portal lint \
 	test \
@@ -54,8 +54,28 @@ reset:
 start:
 	docker compose down -v
 	docker compose up -d --build
+	make wait-db
+	make create-topics
 	make migrate
 	docker compose up -d enricher
+
+wait-db:
+	@echo "Waiting for Postgres to be ready..."
+	@until docker exec support-intel-postgres-1 pg_isready -U app -d supportintel >/dev/null 2>&1; do \
+		sleep 1; \
+	done
+
+create-topics:
+	@echo "Ensuring Kafka topics exist..."
+	@docker exec kafka /opt/kafka/bin/kafka-topics.sh \
+		--bootstrap-server kafka:9092 \
+		--create --if-not-exists --topic support.tickets.v1 --partitions 1 --replication-factor 1 >/dev/null
+	@docker exec kafka /opt/kafka/bin/kafka-topics.sh \
+		--bootstrap-server kafka:9092 \
+		--create --if-not-exists --topic support.enriched.v1 --partitions 1 --replication-factor 1 >/dev/null
+	@docker exec kafka /opt/kafka/bin/kafka-topics.sh \
+		--bootstrap-server kafka:9092 \
+		--create --if-not-exists --topic support.dlq.v1 --partitions 1 --replication-factor 1 >/dev/null
 
 ps:
 	docker compose ps
@@ -71,3 +91,9 @@ enricher:
 
 status:
 	docker compose ps
+
+health:
+	@echo "== Services ==" && docker compose ps
+	@echo "== API /health ==" && (curl -fsS http://localhost:8000/health || echo "API unhealthy or not reachable")
+	@echo "== Postgres ==" && (docker exec support-intel-postgres-1 psql -U app -d supportintel -c "SELECT 1" >/dev/null && echo "OK" || echo "DB unhealthy or not reachable")
+	@echo "== Kafka topics ==" && (docker exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list || echo "Kafka unhealthy or not reachable")

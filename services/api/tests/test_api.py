@@ -314,6 +314,8 @@ def test_kb_upload_ingests_txt(client, monkeypatch):
 
     conn.execute.side_effect = _execute_side_effect
     monkeypatch.setattr(app, "get_db_connection", lambda: conn)
+    monkeypatch.setattr(app, "embed_texts", lambda texts, model_name: [[0.0] * 384 for _ in texts])
+    monkeypatch.setattr(app, "insert_kb_chunks_with_embeddings", lambda *_args, **_kwargs: None)
 
     payload = b"""# Title
 

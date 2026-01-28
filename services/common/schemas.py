@@ -28,6 +28,20 @@ TICKET_EVENT_SCHEMA = {
 
 ENRICHED_EVENT_SCHEMA_VERSION = 1
 
+CATEGORY_ENUM = [
+    "account_access",
+    "billing",
+    "security_incident",
+    "data_refresh",
+    "exports",
+    "feature_request",
+    "integration",
+    "notifications",
+    "general",
+]
+
+SENTIMENT_ENUM = ["positive", "neutral", "negative"]
+
 ENRICHED_EVENT_SCHEMA = {
     "type": "object",
     "required": [
@@ -47,8 +61,8 @@ ENRICHED_EVENT_SCHEMA = {
         "ticket_id": {"type": "string", "minLength": 1},
         "ts": {"type": "string"},
         "summary": {"type": "string"},
-        "category": {"type": "string"},
-        "sentiment": {"type": "string"},
+        "category": {"type": "string", "enum": CATEGORY_ENUM},
+        "sentiment": {"type": "string", "enum": SENTIMENT_ENUM},
         "risk": {"type": "number", "minimum": 0.0, "maximum": 1.0},
         "suggested_reply": {"type": "string"},
     },

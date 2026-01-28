@@ -8,6 +8,7 @@ class ApiSettings(BaseSettings):
     database_url: str = Field(..., alias="DATABASE_URL")
     bootstrap: str = Field("kafka:9092", alias="BOOTSTRAP")
     topic_in: str = Field("support.tickets.v1", alias="TOPIC_IN")
+    embedding_model: str = Field("BAAI/bge-small-en-v1.5", alias="EMBEDDING_MODEL")
 
 
 _settings: ApiSettings | None = None

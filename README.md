@@ -41,7 +41,26 @@ Kafka Topic
 
 ## Setup Instructions
 
-### 1. Start the Services
+### 1. Configure Environment
+
+Copy `.env.example` to `.env` and set required values.
+Minimum to run:
+- `ANTHROPIC_API_KEY`
+- `EMBEDDING_MODEL` (default: `BAAI/bge-small-en-v1.5`)
+- `KB_TOP_K` (default: `5`)
+
+Note: embeddings are computed locally via `sentence-transformers`. The first run will download the model.
+
+### 2. Start the Services (Recommended)
+
+```bash
+cd /Users/prabuddhalakshminarayana/Desktop/support-intel
+
+# Clean start: rebuild, wait for DB, create Kafka topics, run migrations
+make start
+```
+
+### 3. Start the Services (Manual)
 
 ```bash
 cd /Users/prabuddhalakshminarayana/Desktop/support-intel
@@ -50,7 +69,7 @@ cd /Users/prabuddhalakshminarayana/Desktop/support-intel
 docker compose up -d
 ```
 
-### 2. Verify Services are Running
+### 4. Verify Services are Running
 
 ```bash
 docker compose ps
@@ -71,12 +90,14 @@ Common shortcuts:
 make up              # docker compose up -d --build
 make down            # docker compose down
 make reset           # docker compose down -v
-make start           # clean slate + rebuild + migrate + start enricher
+make start           # clean slate + rebuild + wait for DB + create topics + migrate + start enricher
 make ps              # docker compose ps
 make logs            # tail logs
 make logs-enricher   # tail enricher logs
 make enricher        # start only enricher
 make status          # docker compose ps (alias)
+make create-topics   # create Kafka topics if missing
+make health          # check API, DB, and Kafka status
 ```
 
 Tooling:
@@ -428,6 +449,7 @@ docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
 Copy `.env.example` to `.env` and fill in values for local runs.
 Required vars are grouped by service in `.env.example`.
 Note: the enricher uses `ENRICHER_TOPIC_IN` to avoid clashing with the API's `TOPIC_IN`.
+Embeddings are local by default; set `EMBEDDING_MODEL` to change the model used for both KB chunks and ticket queries.
 
 ### Docker Compose Configuration
 

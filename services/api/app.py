@@ -18,17 +18,18 @@ from pydantic import BaseModel, ConfigDict, Field
 from pypdf import PdfReader
 
 if TYPE_CHECKING:
-    from services.api.config import BOOTSTRAP, DATABASE_URL, TOPIC_IN
+    from services.api.config import BOOTSTRAP, DATABASE_URL, EMBEDDING_MODEL, TOPIC_IN
     from services.common.schemas import TICKET_EVENT_SCHEMA, TICKET_EVENT_SCHEMA_VERSION
 else:
     try:
-        from services.api.config import BOOTSTRAP, DATABASE_URL, TOPIC_IN
-    except Exception:  # pragma: no cover - fallback for direct script execution
-        from config import BOOTSTRAP, DATABASE_URL, TOPIC_IN
-    try:
+        from services.api.config import BOOTSTRAP, DATABASE_URL, EMBEDDING_MODEL, TOPIC_IN
         from services.common.schemas import TICKET_EVENT_SCHEMA, TICKET_EVENT_SCHEMA_VERSION
     except Exception:  # pragma: no cover - fallback for direct script execution
         from common.schemas import TICKET_EVENT_SCHEMA, TICKET_EVENT_SCHEMA_VERSION
+        from config import BOOTSTRAP, DATABASE_URL, EMBEDDING_MODEL, TOPIC_IN
+
+from services.common.embeddings import embed_texts
+from services.common.vector_store import insert_kb_chunks_with_embeddings
 
 # Initialize Kafka producer
 producer = Producer({"bootstrap.servers": BOOTSTRAP})
@@ -542,12 +543,9 @@ async def upload_knowledge_base_file(
         ).fetchone()
         doc_id = row[0]
 
-        for idx, chunk in enumerate(chunks):
-            conn.execute(
-                "INSERT INTO kb_chunks(doc_id, chunk_index, heading_path, content)"
-                " VALUES (%s, %s, %s, %s)",
-                (doc_id, idx, chunk.get("heading_path"), chunk["content"]),
-            )
+        chunk_texts = [c["content"] for c in chunks]
+        embeddings = embed_texts(chunk_texts, model_name=EMBEDDING_MODEL)
+        insert_kb_chunks_with_embeddings(conn, doc_id, chunks, embeddings)
         conn.commit()
 
     return {

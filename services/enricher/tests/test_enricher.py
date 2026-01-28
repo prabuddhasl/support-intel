@@ -258,6 +258,25 @@ def test_call_claude_strips_plain_markdown_fences(mock_client):
 
 
 @patch.object(_mod, "client")
+def test_call_claude_includes_kb_context(mock_client):
+    response_json = json.dumps(
+        {
+            "summary": "Payment issue",
+            "category": "billing",
+            "sentiment": "negative",
+            "risk": 0.8,
+            "suggested_reply": "We apologize for the issue.",
+        }
+    )
+    mock_client.messages.create.return_value = _mock_claude_response(response_json)
+
+    call_claude(SAMPLE_TICKET, kb_context="KB Context: example")
+
+    system = mock_client.messages.create.call_args[1]["system"]
+    assert "KB Context: example" in system
+
+
+@patch.object(_mod, "client")
 def test_call_claude_raises_on_invalid_json(mock_client):
     mock_client.messages.create.return_value = _mock_claude_response("This is not JSON")
 
@@ -266,3 +285,4 @@ def test_call_claude_raises_on_invalid_json(mock_client):
         assert False, "Should have raised json.JSONDecodeError"
     except json.JSONDecodeError:
         pass
+

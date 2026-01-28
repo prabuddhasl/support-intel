@@ -18,7 +18,7 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
@@ -47,6 +47,8 @@ services:
       TOPIC_DLQ: support.dlq.v1
       GROUP_ID: support-enricher
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      KB_TOP_K: ${KB_TOP_K}
       DATABASE_URL: postgresql://app:app@postgres:5432/supportintel
       MODEL: claude-sonnet-4-5-20250929
     depends_on:
@@ -61,6 +63,7 @@ services:
       DATABASE_URL: postgresql://app:app@postgres:5432/supportintel
       BOOTSTRAP: kafka:9092
       TOPIC_IN: support.tickets.v1
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
     ports:
       - "8000:8000"
     depends_on:
