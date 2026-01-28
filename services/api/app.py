@@ -1,14 +1,19 @@
 import json
+import hashlib
+import io
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List
 
 import psycopg
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ConfigDict
 from confluent_kafka import Producer
 from jsonschema import validate, ValidationError
+from pypdf import PdfReader
+from docx import Document
 
 try:
     from services.api.config import DATABASE_URL, BOOTSTRAP, TOPIC_IN
@@ -113,6 +118,141 @@ def get_db_connection():
         return psycopg.connect(DATABASE_URL)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
+
+
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
+ALLOWED_CONTENT_TYPES = {
+    ".pdf": {"application/pdf"},
+    ".docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+    ".txt": {"text/plain"},
+    ".md": {"text/markdown", "text/plain"},
+}
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def _file_extension(filename: str) -> str:
+    if "." not in filename:
+        return ""
+    return "." + filename.rsplit(".", 1)[-1].lower()
+
+
+def _safe_filename(filename: str) -> str:
+    basename = os.path.basename(filename or "")
+    return basename[:200] if basename else "upload"
+
+
+def _extract_text(file_bytes: bytes, filename: str) -> str:
+    ext = _file_extension(filename)
+    if ext == ".pdf":
+        reader = PdfReader(io.BytesIO(file_bytes))
+        parts = []
+        for page in reader.pages:
+            parts.append(page.extract_text() or "")
+        return "\n".join(parts).strip()
+    if ext == ".docx":
+        doc = Document(io.BytesIO(file_bytes))
+        return "\n".join(p.text for p in doc.paragraphs if p.text).strip()
+    if ext in {".txt", ".md"}:
+        return file_bytes.decode("utf-8", errors="replace").strip()
+    raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
+
+
+def _chunk_text(text: str, chunk_size: int = 1000, overlap: int = 150) -> List[dict]:
+    if chunk_size <= overlap:
+        raise ValueError("chunk_size must be greater than overlap")
+
+    lines = [line.rstrip() for line in text.splitlines()]
+    paragraphs = []
+    current = []
+    heading_stack = []
+
+    def current_heading_path() -> str:
+        return " > ".join([h[1] for h in heading_stack if h[1]])
+
+    def flush_paragraph(is_heading: bool = False):
+        nonlocal current
+        if current:
+            paragraphs.append({
+                "text": "\n".join(current).strip(),
+                "heading_path": current_heading_path(),
+                "is_heading": is_heading,
+            })
+            current = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            flush_paragraph()
+            level = len(stripped.split()[0])
+            heading_text = stripped.lstrip("#").strip()
+            while heading_stack and heading_stack[-1][0] >= level:
+                heading_stack.pop()
+            heading_stack.append((level, heading_text))
+            paragraphs.append({
+                "text": stripped,
+                "heading_path": current_heading_path(),
+                "is_heading": True,
+            })
+            continue
+        if stripped == "":
+            flush_paragraph()
+            continue
+        current.append(stripped)
+    flush_paragraph()
+
+    chunks = []
+    buf = ""
+    buf_heading = ""
+
+    def push_chunk(value: str, heading_path: str):
+        if value.strip():
+            chunks.append({
+                "content": value.strip(),
+                "heading_path": heading_path,
+            })
+
+    for para in paragraphs:
+        heading_path = para["heading_path"]
+        text_block = para["text"]
+
+        if buf and heading_path and buf_heading and heading_path != buf_heading:
+            push_chunk(buf, buf_heading)
+            buf = ""
+            buf_heading = ""
+
+        if len(text_block) >= chunk_size:
+            if buf:
+                push_chunk(buf, buf_heading)
+                buf = ""
+                buf_heading = ""
+            start = 0
+            while start < len(text_block):
+                end = min(start + chunk_size, len(text_block))
+                push_chunk(text_block[start:end], heading_path)
+                start = end - overlap
+                if start < 0:
+                    start = 0
+                if end == len(text_block):
+                    break
+            continue
+
+        if not buf:
+            buf = text_block
+            buf_heading = heading_path
+            continue
+
+        candidate = f"{buf}\n\n{text_block}"
+        if len(candidate) <= chunk_size:
+            buf = candidate
+        else:
+            push_chunk(buf, buf_heading)
+            buf = text_block
+            buf_heading = heading_path
+
+    if buf:
+        push_chunk(buf, buf_heading)
+
+    return chunks
 
 
 # Endpoints
@@ -234,6 +374,129 @@ async def create_ticket(ticket: CreateTicketRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create ticket: {str(e)}")
+
+
+@app.post("/kb/upload", response_model=dict, status_code=201)
+async def upload_knowledge_base_file(
+    file: UploadFile = File(...),
+    source: Optional[str] = Query(None, description="Optional source label, e.g. 'help_center'"),
+    source_url: Optional[str] = Query(None, description="Optional source URL")
+):
+    """
+    Upload a knowledge base document (PDF/DOCX/TXT/MD), parse it server-side,
+    and store chunked content in the database.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Missing filename")
+
+    safe_name = _safe_filename(file.filename)
+    ext = _file_extension(safe_name)
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"File too large (max {MAX_UPLOAD_BYTES} bytes)")
+
+    if file.content_type:
+        allowed_types = ALLOWED_CONTENT_TYPES.get(ext, set())
+        if allowed_types and file.content_type not in allowed_types:
+            raise HTTPException(status_code=400, detail=f"Unsupported content type: {file.content_type}")
+
+    sha256 = hashlib.sha256(file_bytes).hexdigest()
+    text = _extract_text(file_bytes, safe_name)
+    if not text:
+        raise HTTPException(status_code=400, detail="No extractable text found")
+
+    chunks = _chunk_text(text)
+    if not chunks:
+        raise HTTPException(status_code=400, detail="No valid chunks produced")
+
+    title = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            title = stripped[2:].strip()
+            break
+    if not title:
+        title = file.filename
+
+    with get_db_connection() as conn:
+        existing = conn.execute(
+            "SELECT id FROM kb_documents WHERE sha256=%s",
+            (sha256,),
+        ).fetchone()
+        if existing:
+            return {
+                "doc_id": existing[0],
+                "status": "already_ingested",
+                "sha256": sha256,
+                "chunks": 0,
+            }
+
+        row = conn.execute(
+            """
+            INSERT INTO kb_documents(filename, title, content_type, sha256, size_bytes, source, source_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (safe_name, title, file.content_type, sha256, len(file_bytes), source, source_url)
+        ).fetchone()
+        doc_id = row[0]
+
+        for idx, chunk in enumerate(chunks):
+            conn.execute(
+                "INSERT INTO kb_chunks(doc_id, chunk_index, heading_path, content) VALUES (%s, %s, %s, %s)",
+                (doc_id, idx, chunk.get("heading_path"), chunk["content"])
+            )
+        conn.commit()
+
+    return {
+        "doc_id": doc_id,
+        "status": "ingested",
+        "sha256": sha256,
+        "chunks": len(chunks),
+        "bytes": len(file_bytes),
+    }
+
+
+@app.get("/kb/search", response_model=dict)
+async def search_knowledge_base(
+    q: str = Query(..., min_length=1, description="Search term"),
+    limit: int = Query(5, ge=1, le=50, description="Max results")
+):
+    """
+    Simple keyword search over KB chunks (ILIKE).
+    """
+    pattern = f"%{q}%"
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.id, c.doc_id, c.chunk_index, c.content, d.filename, d.source
+            FROM kb_chunks c
+            JOIN kb_documents d ON d.id = c.doc_id
+            WHERE c.content ILIKE %s
+            ORDER BY c.id ASC
+            LIMIT %s
+            """,
+            (pattern, limit),
+        ).fetchall()
+
+    results = [
+        {
+            "chunk_id": row[0],
+            "doc_id": row[1],
+            "chunk_index": row[2],
+            "content": row[3],
+            "filename": row[4],
+            "source": row[5],
+        }
+        for row in rows
+    ]
+
+    return {"query": q, "count": len(results), "results": results}
 
 
 @app.get("/tickets", response_model=TicketListResponse)

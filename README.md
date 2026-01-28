@@ -61,6 +61,7 @@ You should see:
 - `support-intel-postgres-1` - Running on port 5432
 - `support-intel-enricher-1` - Running
 - `support-intel-api-1` - Running on port 8000
+- `pgadmin` - Running on port 5050 (optional DB GUI)
 
 ### 3. Check Enricher Logs
 
@@ -71,6 +72,24 @@ docker compose logs -f enricher
 # View last 50 lines
 docker compose logs enricher --tail=50
 ```
+
+### 4. Open pgAdmin (Optional DB GUI)
+
+```bash
+# Start pgAdmin if you want a web UI for Postgres
+docker compose up -d pgadmin
+```
+
+Open `http://localhost:5050` and login with:
+- Email: `admin@example.com`
+- Password: `admin`
+
+Then add a server:
+- Host: `postgres`
+- Port: `5432`
+- Username: `app`
+- Password: `app`
+- DB: `supportintel`
 
 ## Using the API
 
@@ -94,6 +113,19 @@ curl -X POST http://localhost:8000/tickets \
 **Health Check:**
 ```bash
 curl http://localhost:8000/health
+```
+
+**Upload Knowledge Base Document (PDF/DOCX/TXT/MD):**
+```bash
+curl -X POST "http://localhost:8000/kb/upload?source=help_center&source_url=https://docs.example.com" \
+  -F "file=@/path/to/your-doc.pdf"
+```
+Sample KB file for testing: `kb/sample_kb.md`
+Max upload size: 10 MB
+
+**Search Knowledge Base (keyword):**
+```bash
+curl "http://localhost:8000/kb/search?q=refund&limit=5"
 ```
 
 **List All Tickets:**
