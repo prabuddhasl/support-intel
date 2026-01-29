@@ -12,8 +12,27 @@ export interface EnrichedTicket {
   sentiment: string | null
   risk: number | null
   suggested_reply: string | null
+  citations?: Citation[] | null
   created_at: string | null
   updated_at: string | null
+}
+
+export interface Citation {
+  chunk_id: number
+  title: string
+  heading_path: string
+}
+
+export interface CitationChunk {
+  chunk_id: number
+  doc_id: number
+  chunk_index: number
+  heading_path: string | null
+  content: string
+  title: string | null
+  filename: string | null
+  source: string | null
+  source_url: string | null
 }
 
 export interface TicketListResponse {

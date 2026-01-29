@@ -8,6 +8,7 @@ export default defineConfig({
     host: true,
     proxy: {
       '/tickets': process.env.API_URL ?? 'http://localhost:8000',
+      '/kb': process.env.API_URL ?? 'http://localhost:8000',
       '/analytics': process.env.API_URL ?? 'http://localhost:8000',
       '/categories': process.env.API_URL ?? 'http://localhost:8000',
       '/sentiments': process.env.API_URL ?? 'http://localhost:8000',

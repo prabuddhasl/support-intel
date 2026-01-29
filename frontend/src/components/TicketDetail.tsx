@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { fetchTicket } from '../api'
-import type { EnrichedTicket } from '../types'
+import { fetchCitationChunk, fetchTicket } from '../api'
+import type { CitationChunk, EnrichedTicket } from '../types'
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return '—'
@@ -26,10 +26,18 @@ export default function TicketDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [openCitation, setOpenCitation] = useState<number | null>(null)
+  const [citationDetails, setCitationDetails] = useState<Record<number, CitationChunk>>({})
+  const [citationLoading, setCitationLoading] = useState<Record<number, boolean>>({})
+  const [citationErrors, setCitationErrors] = useState<Record<number, string>>({})
 
   useEffect(() => {
     if (!ticketId) return
     setLoading(true)
+    setOpenCitation(null)
+    setCitationDetails({})
+    setCitationLoading({})
+    setCitationErrors({})
     fetchTicket(ticketId)
       .then(setTicket)
       .catch((err: unknown) =>
@@ -46,11 +54,34 @@ export default function TicketDetail() {
     })
   }
 
+  function toggleCitation(chunkId: number) {
+    if (openCitation === chunkId) {
+      setOpenCitation(null)
+      return
+    }
+    setOpenCitation(chunkId)
+    if (citationDetails[chunkId] || citationLoading[chunkId]) return
+    setCitationLoading((prev) => ({ ...prev, [chunkId]: true }))
+    setCitationErrors((prev) => ({ ...prev, [chunkId]: '' }))
+    fetchCitationChunk(chunkId)
+      .then((data) => {
+        setCitationDetails((prev) => ({ ...prev, [chunkId]: data }))
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'Failed to load source'
+        setCitationErrors((prev) => ({ ...prev, [chunkId]: message }))
+      })
+      .finally(() => {
+        setCitationLoading((prev) => ({ ...prev, [chunkId]: false }))
+      })
+  }
+
   if (loading) return <div className="detail-loading">Loading ticket...</div>
   if (error) return <div className="detail-error">{error}</div>
   if (!ticket) return <div className="detail-error">Ticket not found</div>
 
   const isPending = ticket.status === 'pending'
+  const citations = ticket.citations ?? []
 
   return (
     <div className="ticket-detail">
@@ -165,6 +196,71 @@ export default function TicketDetail() {
               <p className="reply-text">{ticket.suggested_reply}</p>
             </div>
           )}
+
+          <div className="citations-card">
+            <h3>Sources</h3>
+            {citations.length === 0 ? (
+              <p className="citations-empty">No citations available.</p>
+            ) : (
+              <ul className="citation-list">
+                {citations.map((citation) => {
+                  const isOpen = openCitation === citation.chunk_id
+                  const details = citationDetails[citation.chunk_id]
+                  const isLoading = citationLoading[citation.chunk_id]
+                  const errorMessage = citationErrors[citation.chunk_id]
+
+                  return (
+                    <li key={citation.chunk_id} className="citation-item">
+                      <div className="citation-header">
+                        <div>
+                          <div className="citation-title">
+                            {citation.title}
+                          </div>
+                          <div className="citation-path">
+                            {citation.heading_path || 'No section'}
+                          </div>
+                        </div>
+                        <button
+                          className="citation-toggle"
+                          onClick={() => toggleCitation(citation.chunk_id)}
+                        >
+                          {isOpen ? 'Hide' : 'View'} snippet
+                        </button>
+                      </div>
+                      {isOpen && (
+                        <div className="citation-body">
+                          {isLoading && <div className="citation-loading">Loading snippet...</div>}
+                          {errorMessage && (
+                            <div className="citation-error">{errorMessage}</div>
+                          )}
+                          {details && (
+                            <>
+                              <p className="citation-snippet">{details.content}</p>
+                              <div className="citation-meta">
+                                <span>
+                                  {details.title || details.filename || 'Untitled document'}
+                                </span>
+                                {details.source_url && (
+                                  <a
+                                    className="citation-link"
+                                    href={details.source_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    Open source
+                                  </a>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
         </>
       )}
     </div>

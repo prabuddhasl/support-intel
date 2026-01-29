@@ -1,4 +1,10 @@
-import type { AnalyticsSummary, EnrichedTicket, TicketFilters, TicketListResponse } from './types'
+import type {
+  AnalyticsSummary,
+  CitationChunk,
+  EnrichedTicket,
+  TicketFilters,
+  TicketListResponse,
+} from './types'
 
 async function request<T>(url: string): Promise<T> {
   const res = await fetch(url)
@@ -29,6 +35,10 @@ export async function fetchTicket(ticketId: string): Promise<EnrichedTicket> {
 
 export async function fetchAnalytics(): Promise<AnalyticsSummary> {
   return request<AnalyticsSummary>('/analytics/summary')
+}
+
+export async function fetchCitationChunk(chunkId: number): Promise<CitationChunk> {
+  return request<CitationChunk>(`/kb/chunks/${chunkId}`)
 }
 
 export async function fetchCategories(): Promise<string[]> {

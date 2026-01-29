@@ -75,3 +75,5 @@
 - [ ] Document Kafka ops runbooks (lag spikes, DLQ growth, replay procedures).
 - [ ] Add UI view for DLQ/failed enrichments with manual replay action.
 - [ ] Make embedding provider pluggable and model selectable (document tradeoffs and candidates).
+- [ ] Add inline superscript citations in ticket detail (clickable markers that open source snippets).
+- [ ] Render citations as a table in ticket detail (columns for title, heading, actions).

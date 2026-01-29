@@ -380,6 +380,47 @@ def test_kb_search(client, monkeypatch):
     assert body["results"][0]["filename"] == "sample_kb.md"
 
 
+def test_kb_chunk_fetch_by_id(client, monkeypatch):
+    conn = _make_conn()
+    cursor = MagicMock()
+    cursor.fetchone.return_value = (
+        12,
+        3,
+        4,
+        "Billing > Refunds",
+        "Refund policy: 14 days",
+        "Billing FAQ",
+        "billing.md",
+        "help_center",
+        "https://example.com/kb",
+    )
+    conn.execute.return_value = cursor
+    monkeypatch.setattr(app, "get_db_connection", lambda: conn)
+
+    resp = client.get("/kb/chunks/12")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["chunk_id"] == 12
+    assert body["doc_id"] == 3
+    assert body["heading_path"] == "Billing > Refunds"
+    assert body["content"] == "Refund policy: 14 days"
+    assert body["source_url"] == "https://example.com/kb"
+
+
+def test_kb_chunk_not_found(client, monkeypatch):
+    conn = _make_conn()
+    cursor = MagicMock()
+    cursor.fetchone.return_value = None
+    conn.execute.return_value = cursor
+    monkeypatch.setattr(app, "get_db_connection", lambda: conn)
+
+    resp = client.get("/kb/chunks/999")
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["error"]["code"] == "http_404"
+    assert "not found" in body["error"]["message"].lower()
+
+
 def test_kb_upload_rejects_large_file(client, monkeypatch):
     if getattr(sys.modules.get("python_multipart"), "__fake__", False):
         pytest.skip("python-multipart not installed in test environment")

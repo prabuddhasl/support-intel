@@ -154,6 +154,18 @@ class EnrichedTicket(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class KBChunkResponse(BaseModel):
+    chunk_id: int
+    doc_id: int
+    chunk_index: int
+    heading_path: str | None
+    content: str
+    title: str | None
+    filename: str | None
+    source: str | None
+    source_url: str | None
+
+
 class TicketListResponse(BaseModel):
     tickets: list[EnrichedTicket]
     total: int
@@ -593,6 +605,37 @@ async def search_knowledge_base(
     ]
 
     return {"query": q, "count": len(results), "results": results}
+
+
+@app.get("/kb/chunks/{chunk_id}", response_model=KBChunkResponse)
+async def get_kb_chunk(chunk_id: int):
+    """Fetch a KB chunk by ID for citation display."""
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT c.id, c.doc_id, c.chunk_index, c.heading_path, c.content,
+                   d.title, d.filename, d.source, d.source_url
+            FROM kb_chunks c
+            JOIN kb_documents d ON d.id = c.doc_id
+            WHERE c.id = %s
+            """,
+            (chunk_id,),
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Chunk {chunk_id} not found")
+
+    return KBChunkResponse(
+        chunk_id=row[0],
+        doc_id=row[1],
+        chunk_index=row[2],
+        heading_path=row[3],
+        content=row[4],
+        title=row[5],
+        filename=row[6],
+        source=row[7],
+        source_url=row[8],
+    )
 
 
 @app.get("/tickets", response_model=TicketListResponse)
