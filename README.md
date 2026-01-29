@@ -233,6 +233,9 @@ Required fields:
 - `risk` (number 0..1)
 - `suggested_reply` (string)
 
+Optional fields:
+- `citations` (array of `{chunk_id, title, heading_path}`)
+
 Compatibility rules:
 - New optional fields are backward compatible.
 - Removing/renaming required fields is breaking and requires a new version.
@@ -487,6 +490,7 @@ category TEXT
 sentiment TEXT
 risk DOUBLE PRECISION
 suggested_reply TEXT
+citations JSONB
 updated_at TIMESTAMPTZ
 ```
 
@@ -648,6 +652,15 @@ pytest
 ```
 RUN_INTEGRATION_TESTS=1 DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/supportintel \
 pytest services/api/tests/test_integration_api_db.py
+```
+
+**End-to-end enrichment test**
+- Requires the stack running (`make start`).
+- For local runs without Anthropic access, set `STUB_LLM=1` in the enricher environment.
+- Run with:
+```
+RUN_E2E_TESTS=1 API_BASE_URL=http://localhost:8000 DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/supportintel \
+pytest services/enricher/tests/test_e2e_enrichment.py
 ```
 
 ### Linting & Type Checking

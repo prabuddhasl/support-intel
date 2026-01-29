@@ -18,6 +18,7 @@ already_processed = _mod.already_processed
 mark_processed = _mod.mark_processed
 _mark_failed = _mod._mark_failed
 call_claude = _mod.call_claude
+_build_citations = _mod._build_citations
 
 
 # ── now_iso ──────────────────────────────────────────────────────────
@@ -227,9 +228,27 @@ def test_enriched_event_schema_contract():
         "sentiment": "negative",
         "risk": 0.8,
         "suggested_reply": "We apologize for the issue.",
+        "citations": [
+            {"chunk_id": 12, "title": "Billing FAQ", "heading_path": "Payments"},
+        ],
     }
 
     validate(instance=event, schema=_mod.ENRICHED_EVENT_SCHEMA)
+
+
+def test_build_citations_defaults_missing_fields():
+    chunks = [
+        {"id": 1, "title": "Doc A", "heading_path": "Intro"},
+        {"id": 2, "title": None, "heading_path": None},
+        {"title": "No ID"},
+    ]
+
+    citations = _build_citations(chunks)
+
+    assert citations == [
+        {"chunk_id": 1, "title": "Doc A", "heading_path": "Intro"},
+        {"chunk_id": 2, "title": "Untitled", "heading_path": ""},
+    ]
 
 
 @patch.object(_mod, "client")
@@ -285,4 +304,3 @@ def test_call_claude_raises_on_invalid_json(mock_client):
         assert False, "Should have raised json.JSONDecodeError"
     except json.JSONDecodeError:
         pass
-

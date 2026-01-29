@@ -139,6 +139,7 @@ def test_list_tickets_filters_and_pagination(client, monkeypatch):
             "negative",
             0.8,
             "reply",
+            [{"chunk_id": 12, "title": "Doc", "heading_path": "A"}],
             datetime.now(UTC),
             datetime.now(UTC),
         ),
@@ -151,6 +152,7 @@ def test_list_tickets_filters_and_pagination(client, monkeypatch):
             "low",
             None,
             "pending",
+            None,
             None,
             None,
             None,
@@ -206,6 +208,7 @@ def test_get_ticket_found(client, monkeypatch):
         "negative",
         0.8,
         "reply",
+        [{"chunk_id": 12, "title": "Doc", "heading_path": "A"}],
         datetime.now(UTC),
         datetime.now(UTC),
     )
@@ -217,6 +220,7 @@ def test_get_ticket_found(client, monkeypatch):
     body = resp.json()
     assert body["ticket_id"] == "T-1"
     assert body["risk"] == 0.8
+    assert body["citations"][0]["chunk_id"] == 12
 
 
 def test_get_ticket_not_found(client, monkeypatch):

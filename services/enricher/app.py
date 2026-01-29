@@ -1,8 +1,10 @@
 import json
+import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import psycopg
+from psycopg.types.json import Json
 from anthropic import Anthropic
 from confluent_kafka import Consumer, Producer
 from jsonschema import ValidationError, validate
@@ -161,7 +163,42 @@ def _format_kb_context(chunks: list[dict], max_chars: int = 4000) -> str:
     return "\n\n".join(parts)
 
 
+def _stub_enrichment(ticket: dict) -> dict:
+    subject = (ticket.get("subject") or "Issue").strip()
+    summary = subject[:200] if subject else "Support request"
+    return {
+        "summary": summary,
+        "category": "general",
+        "sentiment": "neutral",
+        "risk": 0.1,
+        "suggested_reply": (
+            "Thanks for reaching out. I can help with this.\n\n"
+            "• Please share any relevant details or error messages.\n"
+            "• If this involves account access, confirm your email and recent changes.\n"
+            "• If this is time-sensitive, let me know the impact.\n\n"
+            "What would you like to prioritize first?"
+        ),
+    }
+
+
+def _build_citations(chunks: list[dict]) -> list[dict]:
+    citations: list[dict] = []
+    for chunk in chunks:
+        if "id" not in chunk:
+            continue
+        citations.append(
+            {
+                "chunk_id": chunk["id"],
+                "title": chunk.get("title") or "Untitled",
+                "heading_path": chunk.get("heading_path") or "",
+            }
+        )
+    return citations
+
+
 def call_claude(ticket: dict, kb_context: str | None = None) -> dict:
+    if os.environ.get("STUB_LLM") == "1":
+        return _stub_enrichment(ticket)
     # Keep it simple: force JSON output.
     system = (
         "You are a support operations assistant. "
@@ -320,6 +357,7 @@ def main():
                 else:
                     chunks = candidates[:KB_TOP_K]
                 kb_context = _format_kb_context(chunks)
+                citations = _build_citations(chunks)
 
                 enriched = call_claude(ticket, kb_context=kb_context)
 
@@ -328,6 +366,7 @@ def main():
                 enriched["sentiment"] = _normalize_sentiment(enriched.get("sentiment"))
                 enriched["risk"] = _clamp_risk(enriched.get("risk", 0.0))
                 enriched["suggested_reply"] = _trim_reply(enriched.get("suggested_reply"))
+                enriched["citations"] = citations
 
                 risk = enriched["risk"]
 
@@ -335,9 +374,9 @@ def main():
                     """
                     INSERT INTO enriched_tickets(
                       ticket_id, last_event_id, subject, body, channel, priority, customer_id,
-                      status, summary, category, sentiment, risk, suggested_reply, updated_at
+                      status, summary, category, sentiment, risk, suggested_reply, citations, updated_at
                     )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,'enriched',%s,%s,%s,%s,%s,NOW())
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,'enriched',%s,%s,%s,%s,%s,%s,NOW())
                     ON CONFLICT (ticket_id) DO UPDATE SET
                       last_event_id=EXCLUDED.last_event_id,
                       status='enriched',
@@ -346,6 +385,7 @@ def main():
                       sentiment=EXCLUDED.sentiment,
                       risk=EXCLUDED.risk,
                       suggested_reply=EXCLUDED.suggested_reply,
+                      citations=EXCLUDED.citations,
                       updated_at=NOW()
                     """,
                     (
@@ -361,6 +401,7 @@ def main():
                         enriched.get("sentiment"),
                         risk,
                         enriched.get("suggested_reply"),
+                        Json(enriched.get("citations")),
                     ),
                 )
                 mark_processed(conn, event_id)

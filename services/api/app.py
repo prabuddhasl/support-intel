@@ -147,6 +147,7 @@ class EnrichedTicket(BaseModel):
     sentiment: str | None
     risk: float | None
     suggested_reply: str | None
+    citations: list[dict] | None = None
     created_at: datetime | None
     updated_at: datetime | None
 
@@ -654,7 +655,7 @@ async def list_tickets(
 
         query = f"""
             SELECT ticket_id, last_event_id, subject, body, channel, priority, customer_id, status,
-                   summary, category, sentiment, risk, suggested_reply, created_at, updated_at
+                   summary, category, sentiment, risk, suggested_reply, citations, created_at, updated_at
             FROM enriched_tickets
             {where_clause}
             ORDER BY {sort_by} {sort_order}
@@ -678,8 +679,9 @@ async def list_tickets(
                 sentiment=row[10],
                 risk=row[11],
                 suggested_reply=row[12],
-                created_at=row[13],
-                updated_at=row[14],
+                citations=row[13],
+                created_at=row[14],
+                updated_at=row[15],
             )
             for row in rows
         ]
@@ -698,7 +700,7 @@ async def get_ticket(ticket_id: str):
     with get_db_connection() as conn:
         query = """
             SELECT ticket_id, last_event_id, subject, body, channel, priority, customer_id, status,
-                   summary, category, sentiment, risk, suggested_reply, created_at, updated_at
+                   summary, category, sentiment, risk, suggested_reply, citations, created_at, updated_at
             FROM enriched_tickets
             WHERE ticket_id = %s
         """
@@ -721,8 +723,9 @@ async def get_ticket(ticket_id: str):
             sentiment=row[10],
             risk=row[11],
             suggested_reply=row[12],
-            created_at=row[13],
-            updated_at=row[14],
+            citations=row[13],
+            created_at=row[14],
+            updated_at=row[15],
         )
 
 

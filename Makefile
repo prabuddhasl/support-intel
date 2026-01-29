@@ -2,7 +2,7 @@
 	migrate stamp reset start wait-db create-topics health doctor dev clean seed \
 	install-python-dev install-frontend install-customer-portal \
 	lint-python format-python typecheck-python lint-frontend lint-customer-portal lint \
-	test \
+	test e2e \
 	up down ps logs logs-enricher enricher status
 
 DATABASE_URL ?= postgresql+psycopg://app:app@localhost:5432/supportintel
@@ -56,6 +56,10 @@ lint: lint-python typecheck-python lint-frontend lint-customer-portal
 
 test:
 	pytest
+
+e2e:
+	RUN_E2E_TESTS=1 API_BASE_URL=http://localhost:8000 DATABASE_URL=$(DATABASE_URL) \
+	pytest services/enricher/tests/test_e2e_enrichment.py
 
 up:
 	docker compose up -d --build

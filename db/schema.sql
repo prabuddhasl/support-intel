@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS enriched_tickets (
   sentiment TEXT,
   risk DOUBLE PRECISION,
   suggested_reply TEXT,
+  citations JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

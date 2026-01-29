@@ -65,6 +65,19 @@ ENRICHED_EVENT_SCHEMA = {
         "sentiment": {"type": "string", "enum": SENTIMENT_ENUM},
         "risk": {"type": "number", "minimum": 0.0, "maximum": 1.0},
         "suggested_reply": {"type": "string"},
+        "citations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["chunk_id", "title", "heading_path"],
+                "properties": {
+                    "chunk_id": {"type": "integer"},
+                    "title": {"type": "string"},
+                    "heading_path": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
     },
     "additionalProperties": True,
 }
