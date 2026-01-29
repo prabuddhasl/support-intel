@@ -55,3 +55,39 @@ def test_update_chunk_embedding_registers_vector(monkeypatch):
     params = conn.execute.call_args[0][1]
     assert "UPDATE kb_chunks SET embedding=%s WHERE id=%s" in sql
     assert params == ([0.1, 0.2, 0.3], 42)
+
+
+def test_search_keyword_chunks_executes_ts_query():
+    conn = MagicMock()
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [
+        (2, 11, 1, "Billing > Refunds", "Refunds in 14 days", "Billing FAQ", "help_center", None),
+    ]
+    conn.execute.return_value = cursor
+
+    results = vector_store.search_keyword_chunks(conn, "refund policy", top_k=2)
+
+    sql = conn.execute.call_args[0][0]
+    params = conn.execute.call_args[0][1]
+    assert "plainto_tsquery('english', %s)" in sql
+    assert "ts_rank_cd" in sql
+    assert params == ("refund policy", "refund policy", 2)
+    assert results == [
+        {
+            "id": 2,
+            "doc_id": 11,
+            "chunk_index": 1,
+            "heading_path": "Billing > Refunds",
+            "content": "Refunds in 14 days",
+            "title": "Billing FAQ",
+            "source": "help_center",
+            "source_url": None,
+        }
+    ]
+
+
+def test_search_keyword_chunks_empty_query_short_circuits():
+    conn = MagicMock()
+
+    assert vector_store.search_keyword_chunks(conn, "   ", top_k=3) == []
+    conn.execute.assert_not_called()

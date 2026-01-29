@@ -17,6 +17,8 @@ class EnricherSettings(BaseSettings):
     kb_top_k: int = Field(5, alias="KB_TOP_K")
     kb_candidates: int = Field(20, alias="KB_CANDIDATES")
     rerank_enabled: bool = Field(True, alias="RERANK_ENABLED")
+    hybrid_search_enabled: bool = Field(True, alias="HYBRID_SEARCH_ENABLED")
+    hybrid_keyword_max: int = Field(20, alias="HYBRID_KEYWORD_MAX")
 
 
 _settings: EnricherSettings | None = None

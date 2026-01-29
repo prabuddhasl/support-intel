@@ -1,5 +1,6 @@
 import json
 import os
+import traceback
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,8 @@ if TYPE_CHECKING:
         KB_CANDIDATES,
         KB_TOP_K,
         MODEL,
+        HYBRID_SEARCH_ENABLED,
+        HYBRID_KEYWORD_MAX,
         RERANK_ENABLED,
         RERANK_MODEL,
         TOPIC_DLQ,
@@ -34,6 +37,8 @@ else:
             KB_CANDIDATES,
             KB_TOP_K,
             MODEL,
+            HYBRID_SEARCH_ENABLED,
+            HYBRID_KEYWORD_MAX,
             RERANK_ENABLED,
             RERANK_MODEL,
             TOPIC_DLQ,
@@ -49,6 +54,8 @@ else:
             KB_CANDIDATES,
             KB_TOP_K,
             MODEL,
+            HYBRID_SEARCH_ENABLED,
+            HYBRID_KEYWORD_MAX,
             RERANK_ENABLED,
             RERANK_MODEL,
             TOPIC_DLQ,
@@ -58,7 +65,7 @@ else:
 
 from services.common.embeddings import embed_text
 from services.common.reranker import rerank_chunks
-from services.common.vector_store import search_similar_chunks
+from services.common.vector_store import search_keyword_chunks, search_similar_chunks
 
 client = Anthropic()  # uses ANTHROPIC_API_KEY env var :contentReference[oaicite:1]{index=1}
 
@@ -194,6 +201,28 @@ def _build_citations(chunks: list[dict]) -> list[dict]:
             }
         )
     return citations
+
+
+def _merge_candidates(
+    primary: list[dict], secondary: list[dict], limit: int, secondary_max: int
+) -> list[dict]:
+    merged: list[dict] = []
+    seen: set[int] = set()
+    secondary_count = 0
+    for pool in (primary, secondary):
+        for item in pool:
+            chunk_id = item.get("id")
+            if chunk_id is None or chunk_id in seen:
+                continue
+            if pool is secondary and secondary_count >= secondary_max:
+                continue
+            merged.append(item)
+            seen.add(chunk_id)
+            if pool is secondary:
+                secondary_count += 1
+            if len(merged) >= limit:
+                return merged
+    return merged
 
 
 def call_claude(ticket: dict, kb_context: str | None = None) -> dict:
@@ -346,12 +375,26 @@ def main():
 
                 event_id = ticket["event_id"]
                 if already_processed(conn, event_id):
-                    consumer.commit(message=msg, asynchronous=False)
+                    try:
+                        consumer.commit(message=msg, asynchronous=False)
+                    except Exception as err:  # pragma: no cover - broker group churn
+                        print(f"[KAFKA] commit failed for duplicate event {event_id}: {err}")
                     continue
 
                 query_text = f"{ticket.get('subject', '')}\n\n{ticket.get('body', '')}".strip()
                 query_embedding = embed_text(query_text, model_name=EMBEDDING_MODEL)
-                candidates = search_similar_chunks(conn, query_embedding, top_k=KB_CANDIDATES)
+                vector_candidates = search_similar_chunks(conn, query_embedding, top_k=KB_CANDIDATES)
+                if HYBRID_SEARCH_ENABLED:
+                    keyword_candidates = search_keyword_chunks(conn, query_text, top_k=KB_CANDIDATES)
+                    keyword_cap = min(max(HYBRID_KEYWORD_MAX, 0), KB_CANDIDATES)
+                    candidates = _merge_candidates(
+                        vector_candidates,
+                        keyword_candidates,
+                        limit=KB_CANDIDATES * 2,
+                        secondary_max=keyword_cap,
+                    )
+                else:
+                    candidates = vector_candidates
                 if RERANK_ENABLED:
                     chunks = rerank_chunks(query_text, candidates, RERANK_MODEL, KB_TOP_K)
                 else:
@@ -418,14 +461,20 @@ def main():
                 producer.produce(TOPIC_OUT, value=json.dumps(out).encode("utf-8"))
                 producer.flush(5)
 
-                consumer.commit(message=msg, asynchronous=False)
+                try:
+                    consumer.commit(message=msg, asynchronous=False)
+                except Exception as err:  # pragma: no cover - broker group churn
+                    print(f"[KAFKA] commit failed for event {event_id}: {err}")
                 print(f"[OK] ticket_id={ticket['ticket_id']} risk={risk:.2f}")
 
             except (json.JSONDecodeError, ValidationError, ValueError) as e:
                 conn.rollback()
                 dlq(producer, msg, str(e))
                 _mark_failed(conn, msg)
-                consumer.commit(message=msg, asynchronous=False)
+                try:
+                    consumer.commit(message=msg, asynchronous=False)
+                except Exception as err:  # pragma: no cover - broker group churn
+                    print(f"[KAFKA] commit failed after DLQ for event {event_id}: {err}")
                 print(f"[DLQ] {e} @ {msg.topic()}[{msg.partition()}] offset={msg.offset()}")
 
             except Exception as e:
@@ -434,7 +483,11 @@ def main():
                 conn.rollback()
                 dlq(producer, msg, f"unexpected: {e}")
                 _mark_failed(conn, msg)
-                consumer.commit(message=msg, asynchronous=False)
+                try:
+                    consumer.commit(message=msg, asynchronous=False)
+                except Exception as err:  # pragma: no cover - broker group churn
+                    print(f"[KAFKA] commit failed after unexpected for event {event_id}: {err}")
+                traceback.print_exc()
                 print(f"[DLQ] unexpected: {e}")
 
 

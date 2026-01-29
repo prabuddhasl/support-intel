@@ -19,6 +19,7 @@ mark_processed = _mod.mark_processed
 _mark_failed = _mod._mark_failed
 call_claude = _mod.call_claude
 _build_citations = _mod._build_citations
+_merge_candidates = _mod._merge_candidates
 
 
 # ── now_iso ──────────────────────────────────────────────────────────
@@ -167,6 +168,18 @@ def test_mark_failed_skips_when_no_ticket_id():
     _mark_failed(conn, msg)
 
     conn.execute.assert_not_called()
+
+
+# ── _merge_candidates ────────────────────────────────────────────────
+
+
+def test_merge_candidates_caps_secondary():
+    primary = [{"id": 1}, {"id": 2}]
+    secondary = [{"id": 3}, {"id": 4}, {"id": 5}]
+
+    merged = _merge_candidates(primary, secondary, limit=10, secondary_max=1)
+
+    assert merged == [{"id": 1}, {"id": 2}, {"id": 3}]
 
 
 # ── call_claude ──────────────────────────────────────────────────────

@@ -14,3 +14,5 @@ RERANK_MODEL = _settings.rerank_model
 KB_TOP_K = _settings.kb_top_k
 KB_CANDIDATES = _settings.kb_candidates
 RERANK_ENABLED = _settings.rerank_enabled
+HYBRID_SEARCH_ENABLED = _settings.hybrid_search_enabled
+HYBRID_KEYWORD_MAX = _settings.hybrid_keyword_max

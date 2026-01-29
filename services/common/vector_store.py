@@ -3,6 +3,22 @@ from collections.abc import Iterable, Sequence
 from pgvector.psycopg import register_vector
 
 
+def _rows_to_chunks(rows: Sequence[tuple]) -> list[dict]:
+    return [
+        {
+            "id": row[0],
+            "doc_id": row[1],
+            "chunk_index": row[2],
+            "heading_path": row[3],
+            "content": row[4],
+            "title": row[5],
+            "source": row[6],
+            "source_url": row[7],
+        }
+        for row in rows
+    ]
+
+
 def insert_kb_chunks_with_embeddings(
     conn,
     doc_id: int,
@@ -56,16 +72,30 @@ def search_similar_chunks(conn, query_embedding: Iterable[float], top_k: int = 5
         (list(query_embedding), top_k),
     ).fetchall()
 
-    return [
-        {
-            "id": row[0],
-            "doc_id": row[1],
-            "chunk_index": row[2],
-            "heading_path": row[3],
-            "content": row[4],
-            "title": row[5],
-            "source": row[6],
-            "source_url": row[7],
-        }
-        for row in rows
-    ]
+    return _rows_to_chunks(rows)
+
+
+def search_keyword_chunks(conn, query_text: str, top_k: int = 5) -> list[dict]:
+    if not query_text.strip():
+        return []
+    rows = conn.execute(
+        """
+        SELECT
+            c.id,
+            c.doc_id,
+            c.chunk_index,
+            c.heading_path,
+            c.content,
+            d.title,
+            d.source,
+            d.source_url
+        FROM kb_chunks c
+        JOIN kb_documents d ON d.id = c.doc_id
+        WHERE c.content_tsv @@ plainto_tsquery('english', %s)
+        ORDER BY ts_rank_cd(c.content_tsv, plainto_tsquery('english', %s)) DESC, c.id ASC
+        LIMIT %s
+        """,
+        (query_text, query_text, top_k),
+    ).fetchall()
+
+    return _rows_to_chunks(rows)

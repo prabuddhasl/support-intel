@@ -34,7 +34,7 @@
     - Decisions: Kafka stream vs scheduled batch; dedup strategy (hash + similarity threshold); recency weighting; versioning/is_current policy; retention window for old chunks.
 - [ ] RAG enhancements (advanced):
   - [x] Reranking (cross-encoder or LLM scorer) on top-k retrieval.
-  - Hybrid search (vector + keyword).
+  - [x] Hybrid search (vector + keyword).
   - Metadata filtering (source, recency, version).
   - [x] Chunking strategy improvements (section-aware, overlap tuning).
   - Context compression/summarization.
@@ -45,6 +45,11 @@
   - Rerank + cite only top-n chunks.
   - Tune reranker/recall balance: adjust KB_TOP_K / KB_CANDIDATES and reranker influence for better citation relevance.
   - Add reranker score threshold to drop low-relevance chunks/citations.
+  - Hybrid balance: cap keyword share or weight vector vs keyword candidates.
+  - Hybrid scoring: combine vector distance and keyword rank before reranking (or validate reranker-only quality).
+  - Keyword query parsing: consider websearch_to_tsquery for more natural queries.
+  - Freshness: add recency boost and/or doc versioning for KB chunks.
+  - Add retrieval eval harness (small gold set + recall@K / MRR) to tune hybrid mix.
 - [ ] Traceability + replay:
   - Add prompt/version tracking for traceability and replay.
   - Include prompt_version/model_version/event_id in enriched events and persist for replay.
@@ -75,5 +80,6 @@
 - [ ] Document Kafka ops runbooks (lag spikes, DLQ growth, replay procedures).
 - [ ] Add UI view for DLQ/failed enrichments with manual replay action.
 - [ ] Make embedding provider pluggable and model selectable (document tradeoffs and candidates).
+- [x] Add citations UI with clickable snippet display in ticket detail.
 - [ ] Add inline superscript citations in ticket detail (clickable markers that open source snippets).
 - [ ] Render citations as a table in ticket detail (columns for title, heading, actions).
